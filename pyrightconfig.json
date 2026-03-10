@@ -1,0 +1,16 @@
+{
+  // Python이 import할 때 찾아볼 추가 경로들
+  // 여기 없으면 "이 모듈 어딨는지 모르겠음" → 빨간 줄
+  "extraPaths": [
+    "source/isaaclab",
+    "source/isaaclab_tasks", 
+    "source/isaaclab_assets"
+  ],
+  
+  // 어떤 Python을 쓰는지 (conda 환경)
+  // 여기 없으면 시스템 기본 Python으로 분석 → 패키지 못 찾음
+  "pythonPath": "/home/robit/miniconda3/envs/isaaclab_230/bin/python",
+  
+  // 타입 체크 수준 (off = 타입 관련 경고 전부 끔)
+  "typeCheckingMode": "off"
+}

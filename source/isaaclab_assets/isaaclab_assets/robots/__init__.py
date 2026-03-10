@@ -7,6 +7,7 @@
 # Configuration for different assets.
 ##
 
+from .adult import *
 from .allegro import *
 from .ant import *
 from .anymal import *

@@ -1,0 +1,200 @@
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""
+추가적으로 video 렌더링 이상한거랑 
+
+height scanner 
+
+"""
+
+
+""" 13DOF TORSO -DUMMY ROBOT DISCRIPTION """
+
+import os
+from pathlib import Path
+import math
+
+import isaaclab.sim as sim_utils
+# from isaaclab.actuators import DCMotorCfg, ImplicitActuatorCfg #, ActuatorNetMLPCfg
+from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab.actuators import DelayedPDActuatorCfg
+
+USD_PATH = "/home/robit/IsaacLab_230/source/isaaclab_assets/isaaclab_assets/robots/roa_train_12dof/roa_train_12dof.usd"
+
+_INIT_JOINT_POS = {
+   # "torso_yaw": 0.0,
+
+    "left_hip_pitch": math.radians(-20.0),
+    "left_hip_roll": 0.0,
+    "left_hip_yaw": 0.0,
+    "left_knee_pitch": math.radians(50.0),
+    "left_ankle_pitch": math.radians(-30.0),
+    "left_ankle_roll": 0.0,
+
+    "right_hip_pitch": math.radians(20.0),
+    "right_hip_roll": 0.0,
+    "right_hip_yaw": 0.0,
+    "right_knee_pitch": math.radians(-50.0),
+    "right_ankle_pitch": math.radians(30.0),
+    "right_ankle_roll": 0.0,
+}
+
+_JOINT_META = {
+    # ────────────── TORSO ──────────────
+   # "torso_yaw": {
+   #     "kp": 50.0,
+   #     "kd": 2.0,
+   #     "torque": 36.0,
+   #     "vmax": 67.0,
+   #     "arm": 0.01,
+   # },
+
+    # ────────────── LEFT LEG ──────────────
+    "left_hip_pitch": {
+        "kp": 150.0,
+        "kd": 24.722,
+        "torque": 84.0,
+        "vmax": 17.488,
+        "arm": 0.04,
+    },
+    "left_hip_roll": {
+        "kp": 200.0,
+        "kd": 26.387,
+        "torque": 42.0,
+        "vmax": 18.849,
+        "arm": 0.02,
+    },
+    "left_hip_yaw": {
+        "kp": 100.0,
+        "kd": 3.419,
+        "torque": 42.0,
+        "vmax": 18.849,
+        "arm": 0.02,
+    },
+    "left_knee_pitch": {
+        "kp": 150.0,
+        "kd": 8.654,
+        "torque": 84.0,
+        "vmax": 17.488,
+        "arm": 0.04,
+    },
+    "left_ankle_pitch": {
+        "kp": 40.0,
+        "kd": 0.99,
+        "torque": 11.9,
+        "vmax": 37.699,
+        "arm": 0.0042,
+    },
+    "left_ankle_roll": {
+        "kp": 40.0,
+        "kd": 0.99,
+        "torque": 11.9,
+        "vmax": 37.699,
+        "arm": 0.0042,
+    },
+
+    # ────────────── RIGHT LEG ──────────────
+    "right_hip_pitch": {
+        "kp": 150.0,
+        "kd": 24.722,
+        "torque": 84.0,
+        "vmax": 17.488,
+        "arm": 0.04,
+    },
+    "right_hip_roll": {
+        "kp": 200.0,
+        "kd": 26.387,
+        "torque": 42.0,
+        "vmax": 18.849,
+        "arm": 0.02,
+    },
+    "right_hip_yaw": {
+        "kp": 100.0,
+        "kd": 3.419,
+        "torque": 42.0,
+        "vmax": 18.849,
+        "arm": 0.02,
+    },
+    "right_knee_pitch": {
+        "kp": 150.0,
+        "kd": 8.654,
+        "torque": 84.0,
+        "vmax": 17.488,
+        "arm": 0.04,
+    },
+    "right_ankle_pitch": {
+        "kp": 40.0,
+        "kd": 0.99,
+        "torque": 11.9,
+        "vmax": 37.699,
+        "arm": 0.0042,
+    },
+    "right_ankle_roll": {
+        "kp": 40.0,
+        "kd": 0.99,
+        "torque": 11.9,
+        "vmax": 37.699,
+        "arm": 0.0042,
+    },
+}
+
+# Build one ImplicitActuatorCfg per joint
+# If sim dt is 0.005 seconds (5 milliseconds), then max_delay=8 means 40ms delay
+# # Build one ImplicitActuatorCfg per joint
+# _ACTUATORS = {
+#     jn: ImplicitActuatorCfg(
+#         joint_names_expr=[jn],
+#         effort_limit=meta["torque"],
+#         velocity_limit=meta["vmax"],
+#         stiffness={jn: meta["kp"]},
+#         damping={jn: meta["kd"]},
+#         armature=meta["arm"],
+#     )
+#     for jn, meta in _JOINT_META.items()
+# }
+
+# Build one DelayedPDActuatorCfg per joint
+_ACTUATORS = {
+    jn: DelayedPDActuatorCfg(
+        joint_names_expr=[jn],
+        effort_limit=meta["torque"],
+        velocity_limit=meta["vmax"],
+        stiffness={jn: meta["kp"]},
+        damping={jn: meta["kd"]},
+        armature=meta["arm"],
+        min_delay=0,
+        max_delay=4,
+    )
+    for jn, meta in _JOINT_META.items()
+}
+
+adult_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=USD_PATH,
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1_000.0,
+            max_angular_velocity=1_000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=8,
+            solver_velocity_iteration_count=4,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.7),
+        joint_pos=_INIT_JOINT_POS,
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=1.0,
+    actuators=_ACTUATORS,
+)
