@@ -1,17 +1,3 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
-"""
-추가적으로 video 렌더링 이상한거랑 
-
-height scanner 
-
-"""
-
-
-""" 13DOF TORSO -DUMMY ROBOT DISCRIPTION """
 
 import os
 from pathlib import Path
@@ -25,8 +11,6 @@ from isaaclab.actuators import DelayedPDActuatorCfg
 USD_PATH = "/home/robit/IsaacLab_230/source/isaaclab_assets/isaaclab_assets/robots/roa_train_12dof/roa_train_12dof.usd"
 
 _INIT_JOINT_POS = {
-   # "torso_yaw": 0.0,
-
     "left_hip_pitch": math.radians(-20.0),
     "left_hip_roll": 0.0,
     "left_hip_yaw": 0.0,
@@ -43,14 +27,6 @@ _INIT_JOINT_POS = {
 }
 
 _JOINT_META = {
-    # ────────────── TORSO ──────────────
-   # "torso_yaw": {
-   #     "kp": 50.0,
-   #     "kd": 2.0,
-   #     "torque": 36.0,
-   #     "vmax": 67.0,
-   #     "arm": 0.01,
-   # },
 
     # ────────────── LEFT LEG ──────────────
     "left_hip_pitch": {
