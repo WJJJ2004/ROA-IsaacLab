@@ -2,6 +2,7 @@
 
 ## NOTE VERSION MISS MATCH ISSUE (LWJ)
 
+import math
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -26,12 +27,84 @@ from isaaclab.sensors import ImuCfg
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
+from isaaclab.utils.modifiers import ModifierBase, ModifierCfg
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab_assets import ROA_CFG, ROA_BASELINE_CFG
+from isaaclab_assets.robots.roa_pace import ROA_POLICY_JOINT_ORDER
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
     LocomotionVelocityRoughEnvCfg,
     RewardsCfg,
 )
+
+
+_ANKLE_ACTION_INDICES = (8, 9, 10, 11)
+
+# Virtual RSU workspace selected by rsu_joint_limit_generator.py.  These are
+# absolute virtual-joint targets, not policy-space action bounds.
+_ANKLE_PITCH_LIMIT = (math.radians(-36.0), math.radians(39.5))
+_ANKLE_ROLL_LIMIT = (math.radians(-18.0), math.radians(17.5))
+
+
+def selected_action_rate_l2(env: ManagerBasedEnv, action_indices: tuple[int, ...]) -> torch.Tensor:
+    """Penalize action changes only on selected policy-action dimensions."""
+    indices = torch.tensor(action_indices, device=env.device, dtype=torch.long)
+    delta = env.action_manager.action[:, indices] - env.action_manager.prev_action[:, indices]
+    return torch.sum(torch.square(delta), dim=1)
+
+
+class SelectiveOneStepDelay(ModifierBase):
+    """Delay selected observation columns by one policy step.
+
+    The real RSU state is reconstructed at about 94 Hz and becomes available
+    roughly 11.6 ms after motor feedback.  With a 50 Hz policy, one policy-step
+    delay is the closest causal discrete approximation while leaving direct
+    motor feedback columns current.
+    """
+
+    def __init__(self, cfg: "SelectiveOneStepDelayCfg", data_dim: tuple[int, ...], device: str):
+        super().__init__(cfg, data_dim, device)
+        self._indices = torch.tensor(cfg.indices, device=device, dtype=torch.long)
+        self._previous = torch.zeros(data_dim, device=device)
+        self._initialized = torch.zeros(data_dim[0], device=device, dtype=torch.bool)
+
+    def reset(self, env_ids=None):
+        if env_ids is None or env_ids == slice(None):
+            env_ids = slice(None)
+        self._previous[env_ids] = 0.0
+        self._initialized[env_ids] = False
+
+    def __call__(self, data: torch.Tensor) -> torch.Tensor:
+        output = data.clone()
+        initialized = self._initialized
+        if torch.any(initialized):
+            env_ids = torch.nonzero(initialized, as_tuple=False).squeeze(-1)
+            output[env_ids[:, None], self._indices] = self._previous[env_ids[:, None], self._indices]
+        self._previous.copy_(data)
+        self._initialized[:] = True
+        return output
+
+
+@configclass
+class SelectiveOneStepDelayCfg(ModifierCfg):
+    func: type = SelectiveOneStepDelay
+    indices: tuple[int, ...] = _ANKLE_ACTION_INDICES
+
+
+@configclass
+class ROAActions:
+    """12-DOF virtual-joint action with hard RSU workspace clipping."""
+
+    joint_pos = mdp.JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=ROA_POLICY_JOINT_ORDER,
+        preserve_order=True,
+        scale=0.5,
+        use_default_offset=True,
+        clip={
+            ".*_ankle_pitch": _ANKLE_PITCH_LIMIT,
+            ".*_ankle_roll": _ANKLE_ROLL_LIMIT,
+        },
+    )
 
 
 # NOTE: randomize_imu_mount()
@@ -279,7 +352,7 @@ class ROARewards(RewardsCfg):
     )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.1,
+        weight=-0.5,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
@@ -299,9 +372,9 @@ class ROARewards(RewardsCfg):
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
                     "right_hip_pitch",
-                    "right_hip_pitch",
                     "left_hip_pitch",
-                    "left_hip_pitch",
+                    "right_knee_pitch",
+                    "left_knee_pitch",
                 ]
             )
         },
@@ -309,7 +382,7 @@ class ROARewards(RewardsCfg):
     
     dof_pos_limits_ankle = RewTerm(
         func=mdp.joint_pos_limits,
-        weight=-1.0,
+        weight=-5.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -371,7 +444,7 @@ class ROARewards(RewardsCfg):
 
     joint_deviation_ankles = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-2.5,
+        weight=-0.5,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -412,6 +485,28 @@ class ROARewards(RewardsCfg):
                     "left_TPU_pad_1", "right_TPU_pad_1"
                 ],
             ),
+        },
+    )
+
+    ankle_action_rate_l2 = RewTerm(
+        func=selected_action_rate_l2,
+        weight=-0.2,
+        params={"action_indices": _ANKLE_ACTION_INDICES},
+    )
+
+    ankle_dof_acc_l2 = RewTerm(
+        func=mdp.joint_acc_l2,
+        weight=-5.0e-7,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=[
+                    "left_ankle_pitch",
+                    "left_ankle_roll",
+                    "right_ankle_pitch",
+                    "right_ankle_roll",
+                ],
+            )
         },
     )
     
@@ -548,9 +643,21 @@ class ROAObservations:
             func=mdp.generated_commands, params={"command_name": "base_velocity"}
         )
         joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.02, n_max=0.02)
+            func=mdp.joint_pos_rel,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
+            },
+            noise=Unoise(n_min=-0.02, n_max=0.02),
+            modifiers=[SelectiveOneStepDelayCfg()],
         )
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.1, n_max=0.1))
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
+            },
+            noise=Unoise(n_min=-0.2, n_max=0.2),
+            modifiers=[SelectiveOneStepDelayCfg()],
+        )
         # IMU observations
         imu_ang_vel = ObsTerm(
             func=mdp.imu_ang_vel,
@@ -587,7 +694,7 @@ class ROACurriculumCfg:
         func=velocity_push_curriculum,
         params={
             "min_push": 0.01,
-            "max_push": 2.0,
+            "max_push": 1.0,
             "curriculum_start_step": 24 * 500,
             "curriculum_stop_step": 24 * 70000,
         },
@@ -598,6 +705,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     enable_randomization: bool = True
     use_baseline_actuator: bool = False
     rewards: ROARewards = ROARewards()
+    actions: ROAActions = ROAActions()
     observations: ROAObservations = ROAObservations()
     curriculum: ROACurriculumCfg = ROACurriculumCfg()
 
@@ -639,9 +747,9 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names="base_link"),
                 "com_range": {
-                    "x": (-0.03, 0.03), # 0.1 # 0.3 
-                    "y": (-0.03, 0.03), # 0.1 # 0.3 
-                    "z": (-0.01, 0.01) # 0.2 # 0.3
+                    "x": (-0.015, 0.015),
+                    "y": (-0.015, 0.015),
+                    "z": (-0.005, 0.005),
                 },
             },                                    
         )
@@ -664,9 +772,9 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "asset_cfg": SceneEntityCfg(
                     "robot", body_names=["left_TPU_pad_1", "right_TPU_pad_1"]
                 ),
-                "static_friction_range": (0.5, 1.0), # (0.1, 2.0)  (0.05, 4.0)  sim: (0.06, 2.8)
-                "dynamic_friction_range": (0.5, 1.0), # (0.1, 2.0) (0.05, 4.0)  sim: (0.06, 3.0)
-                "restitution_range": (0.0, 0.5), # (0.0, 0.1) (0.05, 1.0)       sim: (0.03, 0.4)
+                "static_friction_range": (0.45, 1.15),
+                "dynamic_friction_range": (0.35, 1.0),
+                "restitution_range": (0.0, 0.1),
                 "num_buckets": 64,
                 "make_consistent": True,  # Ensure dynamic friction is always less than static friction
             },
@@ -699,7 +807,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                         "imu_sensor_1",
                     ],
                 ),
-                "mass_distribution_params": (0.8, 1.3), # (0.8, 1.2) (0.7, 1.5) sim:(0.7, 1.5)
+                "mass_distribution_params": (0.9, 1.1),
                 "operation": "scale",
                 "distribution": "uniform",
                 "recompute_inertia": True,
@@ -712,21 +820,22 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "stiffness_distribution_params": (0.8, 1.2), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
-                "damping_distribution_params": (0.8, 1.2), # (0.8, 1.2) (0.5, 1.5)   sim:(0.6, 1.4)
+                "stiffness_distribution_params": (0.9, 1.1),
+                "damping_distribution_params": (0.85, 1.15),
                 "operation": "scale",
                 "distribution": "uniform",
             },
         )
 
-        # Actuator friction and armature randomization
+        # Armature randomization.  Joint friction is intentionally not included:
+        # the nominal values are zero, so the previous scale range (0.9, 1.1)
+        # always produced exactly zero and provided no domain randomization.
         self.events.randomize_joint_properties = EventTerm(
             func=mdp.randomize_joint_parameters,
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "friction_distribution_params": (0.9, 1.1), # (0.0, 0.3) (0.0, 0.5) sim:(0.0, 0.5)
-                "armature_distribution_params": (0.9, 1.1), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
+                "armature_distribution_params": (0.85, 1.15),
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -734,8 +843,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # Joint initialization randomization
         # Reset by offset is needed since the default is to scale by zero
-        self.events.reset_robot_joints.params["position_range"] = (-0.1, 0.1)
-        self.events.reset_robot_joints.params["velocity_range"] = (-0.5, 0.5)
+        self.events.reset_robot_joints.params["position_range"] = (-0.05, 0.05)
+        self.events.reset_robot_joints.params["velocity_range"] = (-0.2, 0.2)
         self.events.reset_robot_joints.func = mdp.reset_joints_by_offset
 
         self.events.push_robot.mode = "interval"
@@ -749,12 +858,12 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.reset_base.params = {
             "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
             "velocity_range": {
-                "x": (-0.3, 0.3),
-                "y": (-0.3, 0.3),
-                "z": (-0.1, 0.1),
-                "roll": (-0.2, 0.2),
-                "pitch": (-0.2, 0.2),
-                "yaw": (-0.2, 0.2),
+                "x": (-0.15, 0.15),
+                "y": (-0.15, 0.15),
+                "z": (-0.05, 0.05),
+                "roll": (-0.1, 0.1),
+                "pitch": (-0.1, 0.1),
+                "yaw": (-0.1, 0.1),
             },
         }
 
@@ -765,14 +874,14 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             params={
                 "sensor_cfg": SceneEntityCfg("imu"),
                 "pos_range": {
-                    "x": (-0.05, 0.05),
-                    "y": (-0.05, 0.05),
-                    "z": (-0.05, 0.05),
+                    "x": (-0.005, 0.005),
+                    "y": (-0.005, 0.005),
+                    "z": (-0.005, 0.005),
                 },
                 "rot_range": {
-                    "roll": (-0.1, 0.1),
-                    "pitch": (-0.1, 0.1),
-                    "yaw": (-0.1, 0.1),
+                    "roll": (-0.02, 0.02),
+                    "pitch": (-0.02, 0.02),
+                    "yaw": (-0.02, 0.02),
                 },
             },
         )
@@ -781,10 +890,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # self.events.base_com = None
 
         # Rewards
-        self.rewards.lin_vel_z_l2.weight = 0.0 #  -0.2
+        self.rewards.lin_vel_z_l2.weight = -0.5
         self.rewards.undesired_contacts = None
         self.rewards.flat_orientation_l2.weight = -1.0  # Penalize non-flat base orientation using L2 squared kernel.
-        self.rewards.action_rate_l2.weight = -0.05 # -0.005      # Penalize xy-axis base angular velocity using L2 squared kernel.
+        self.rewards.action_rate_l2.weight = -0.1
         self.rewards.dof_acc_l2.weight = -1.25e-7 # -1.25e-7 # 
         self.rewards.dof_acc_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot",

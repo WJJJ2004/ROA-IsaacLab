@@ -12,8 +12,9 @@ Only the actuator dictionary is replaced for the training environment.
 import math
 
 from isaaclab.assets.articulation import ArticulationCfg
-from pace_sim2real.utils import PaceDCMotorCfg
 from pace_sim2real.tasks.manager_based.pace.assets.roa.roa import ROA_CFG
+
+from .roa_delayed_dc_motor import ROADelayedDCMotorCfg
 
 # RVIZ TUNED VALUE (08/12/2026 UPDATE)
 _INIT_JOINT_POS = {
@@ -52,6 +53,24 @@ ROA_JOINT_ORDER = [
     "right_ankle_roll",
 ]
 
+# Policy/ONNX order used by the controller and MuJoCo sim-to-sim.  Keep this
+# distinct from ROA_JOINT_ORDER above, which is the PACE identification dataset
+# order (left leg followed by right leg).
+ROA_POLICY_JOINT_ORDER = [
+    "left_hip_pitch",
+    "right_hip_pitch",
+    "left_hip_roll",
+    "right_hip_roll",
+    "left_hip_yaw",
+    "right_hip_yaw",
+    "left_knee_pitch",
+    "right_knee_pitch",
+    "left_ankle_pitch",
+    "right_ankle_pitch",
+    "left_ankle_roll",
+    "right_ankle_roll",
+]
+
 
 RSU_STATIC_FRICTION = 0.0
 RSU_DYNAMIC_FRICTION = 0.0
@@ -59,7 +78,17 @@ RSU_VISCOUS_FRICTION = 0.0
 
 GLOBAL_ARMATURE_SCALE = 1.0
 
-GLOBAL_MAX_DELAY = 1
+# Delay is sampled per environment on reset.  At the 200 Hz physics rate,
+# 2--5 steps correspond to 10--25 ms.  The direct-joint chirp responses showed
+# approximately 21 ms of command-to-feedback dead time.
+DIRECT_MIN_DELAY_STEPS = 2
+DIRECT_MAX_DELAY_STEPS = 5
+
+# The RSU motor path contributes approximately 10--12 ms; target selection and
+# solver ZOH bring target-to-feedback latency to roughly 18 ms before virtual
+# state reconstruction.  The observation-side delay is modeled in the task cfg.
+RSU_MIN_DELAY_STEPS = 2
+RSU_MAX_DELAY_STEPS = 4
 
 # -----------------------------------------------------------------------------
 # RobStride RS03
@@ -67,7 +96,7 @@ GLOBAL_MAX_DELAY = 1
 #   - hip_roll
 #   - hip_yaw
 # -----------------------------------------------------------------------------
-ROA_RS03_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
+ROA_RS03_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
     joint_names_expr=[
         ".*_hip_roll",
         ".*_hip_yaw",
@@ -89,12 +118,12 @@ ROA_RS03_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
         ".*": 0.02,
     },
     
-    encoder_bias={".*": 0.0},
     friction={".*": 0.0},
     dynamic_friction={".*": 0.0},
     viscous_friction={".*": 0.0},
 
-    max_delay=GLOBAL_MAX_DELAY,
+    min_delay=DIRECT_MIN_DELAY_STEPS,
+    max_delay=DIRECT_MAX_DELAY_STEPS,
 )
 
 
@@ -104,7 +133,7 @@ ROA_RS03_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
 #   - hip_pitch: 기존 하드코딩 값 유지
 #   - knee_pitch: 최신 PACE 식별값 적용
 # -----------------------------------------------------------------------------
-ROA_RS04_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
+ROA_RS04_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
     joint_names_expr=[
         ".*_hip_pitch",
         ".*_knee_pitch",
@@ -126,12 +155,12 @@ ROA_RS04_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
         ".*": 0.02,
     },
     
-    encoder_bias={".*": 0.0},
     friction={".*": 0.0},
     dynamic_friction={".*": 0.0},
     viscous_friction={".*": 0.0},
 
-    max_delay=GLOBAL_MAX_DELAY,
+    min_delay=DIRECT_MIN_DELAY_STEPS,
+    max_delay=DIRECT_MAX_DELAY_STEPS,
 )
 
 
@@ -141,7 +170,7 @@ ROA_RS04_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
 # -----------------------------------------------------------------------------
 RSU_KVALUE = 1.37  # RSU K-value ratio (ankle_roll / ankle_pitch)
 
-ROA_RSU_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
+ROA_RSU_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
     joint_names_expr=[
         ".*_ankle_pitch",
         ".*_ankle_roll",
@@ -164,11 +193,11 @@ ROA_RSU_PACE_ACTUATOR_CFG = PaceDCMotorCfg(
         ".*_ankle_pitch": 0.04255,
         ".*_ankle_roll": 0.05847,
     },
-    encoder_bias={".*": 0.0},
     friction={".*": 0.0},
     dynamic_friction={".*": 0.0},
     viscous_friction={".*": 0.0},
-    max_delay=0,
+    min_delay=RSU_MIN_DELAY_STEPS,
+    max_delay=RSU_MAX_DELAY_STEPS,
 )
 
 # *****************************************************************************
