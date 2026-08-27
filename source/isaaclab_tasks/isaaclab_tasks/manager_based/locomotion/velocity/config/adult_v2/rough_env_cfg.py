@@ -1,10 +1,5 @@
 """Rough terrain locomotion environment config for adult."""
 
-## NOTE VERSION MISS MATCH ISSUE (LWJ)
-"""
-
-"""
-
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -30,7 +25,7 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-from isaaclab_assets import adult_CFG
+from isaaclab_assets import adult_v2_CFG
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
     LocomotionVelocityRoughEnvCfg,
     RewardsCfg,
@@ -116,7 +111,7 @@ adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     use_cache=False,
     sub_terrains={
     "flat": terrain_gen.MeshPlaneTerrainCfg(
-        proportion=7.0,
+        proportion=1.0,
     ),
 
     # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
@@ -139,28 +134,7 @@ adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     #     platform_width=2.0,
     #     border_width=0.25,
     # ),
-    # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-    #     proportion=0.5,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-    #     proportion=0.5,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-    #     proportion=0.5,
-    #     grid_width=0.45,
-    #     grid_height_range=(0.05, 0.1),
-    #     platform_width=2.0,
-    # ),        
+        
     #    "flat": terrain_gen.MeshPlaneTerrainCfg(
     #        proportion=1.0,
     #    ),
@@ -170,28 +144,28 @@ adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         # "flat": terrain_gen.MeshPlaneTerrainCfg(
         #     proportion=0.25,
         # ),
-        # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-        #     proportion=1.0,
-        #     step_height_range=(0.05, 0.10),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
-        # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-        #     proportion=1.0,
-        #     step_height_range=(0.05, 0.10),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
-        # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-        #     proportion=1.0,
-        #     grid_width=0.45,
-        #     grid_height_range=(0.05, 0.2),
-        #     platform_width=2.0,
-        # ),
+    #     "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+    #         proportion=1.0,
+    #         step_height_range=(0.05, 0.10),
+    #         step_width=0.3,
+    #         platform_width=3.0,
+    #         border_width=1.0,
+    #         holes=False,
+    #     ),
+    #     "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+    #         proportion=1.0,
+    #         step_height_range=(0.05, 0.10),
+    #         step_width=0.3,
+    #         platform_width=3.0,
+    #         border_width=1.0,
+    #         holes=False,
+    #     ),
+    #     "boxes": terrain_gen.MeshRandomGridTerrainCfg(
+    #         proportion=1.0,
+    #         grid_width=0.45,
+    #         grid_height_range=(0.05, 0.2),
+    #         platform_width=2.0,
+    #     ),
     #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
     #         proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
     #     ),
@@ -297,7 +271,7 @@ class adultRewards(RewardsCfg):
     # Joint-limit & deviation penalties
     dof_pos_limits = RewTerm(
         func=mdp.joint_pos_limits,
-        weight=-1.0,
+        weight=-0.5, # -1.0
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -312,7 +286,7 @@ class adultRewards(RewardsCfg):
 
     joint_deviation_hip = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.5,
+        weight=-0.25, # -0.5
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -328,7 +302,7 @@ class adultRewards(RewardsCfg):
 
     joint_deviation_hip_pitch_knee = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.1,
+        weight=-0.05, # -0.1
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -554,8 +528,9 @@ class adultCurriculumCfg:
         },
     )
 
+
 @configclass
-class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
+class adult_v2_RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     enable_randomization: bool = True
     rewards: adultRewards = adultRewards()
     observations: adultObservations = adultObservations()
@@ -566,7 +541,7 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         super().__post_init__()
 
         # Scene
-        self.scene.robot = adult_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = adult_v2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base_link"
 
         # Terrains
@@ -587,7 +562,8 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)  # meters, quaternion
             ),
         )
-        # Sampling range in meters
+        self.events.base_external_force_torque = None
+
         self.events.base_com = EventTerm(
             func=mdp.randomize_rigid_body_com,
             mode="reset",
@@ -600,16 +576,6 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 },
             },                                    
         )
-        
-        # self.events.base_external_force_torque =  = EventTerm(
-        #     func=mdp.apply_external_force_torque,
-        #     mode="reset",
-        #     params={
-        #         "asset_cfg": SceneEntityCfg("robot", body_names="base_link"),
-        #         "force_range": (0.0, 0.0),
-        #         "torque_range": (-0.0, 0.0),
-        #     },
-        # )
 
         # Physics material randomization (friction with the floor)
         self.events.physics_material = EventTerm(
@@ -667,8 +633,8 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "stiffness_distribution_params": (0.6, 1.4), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
-                "damping_distribution_params": (0.6, 1.4), # (0.8, 1.2) (0.5, 1.5)   sim:(0.6, 1.4)
+                "stiffness_distribution_params": (0.85, 1.8), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
+                "damping_distribution_params": (0.85, 1.8), # (0.8, 1.2) (0.5, 1.5)   sim:(0.6, 1.4)
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -733,12 +699,11 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         )
 
         self.events.add_base_mass = None
-        # self.events.base_com = None
 
         # Rewards
         self.rewards.lin_vel_z_l2.weight = 0.0
         self.rewards.undesired_contacts = None
-        self.rewards.flat_orientation_l2.weight = -1.0  # Penalize non-flat base orientation using L2 squared kernel.
+        self.rewards.flat_orientation_l2.weight = -1.0 #-1.0 # Penalize non-flat base orientation using L2 squared kernel.
         self.rewards.action_rate_l2.weight = -0.05      # Penalize xy-axis base angular velocity using L2 squared kernel.
         self.rewards.dof_acc_l2.weight = -1.25e-7
         self.rewards.dof_acc_l2.params["asset_cfg"] = SceneEntityCfg(
@@ -843,9 +808,9 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         }
 
         # No pushes and push curriculum
-        # self.events.push_robot = None
-        # if hasattr(self.curriculum, "velocity_push_curriculum"):
-        #     self.curriculum.velocity_push_curriculum = None
+        self.events.push_robot = None
+        if hasattr(self.curriculum, "velocity_push_curriculum"):
+            self.curriculum.velocity_push_curriculum = None
 
         # No actor observation noise
         self.observations.policy.enable_corruption = False
@@ -856,7 +821,7 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
 
 @configclass
-class adultRoughEnvCfg_PLAY(adultRoughEnvCfg):
+class adult_v2_RoughEnvCfg_PLAY(adult_v2_RoughEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -877,10 +842,10 @@ class adultRoughEnvCfg_PLAY(adultRoughEnvCfg):
         # self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
         # self.commands.base_velocity.ranges.ang_vel_z = (0.0, 0.0)
 
-        self.commands.base_velocity.ranges.lin_vel_x = (0.0, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.0)
         self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
-        self.commands.base_velocity.ranges.ang_vel_z = (0.0, 0.0)
-        self.commands.base_velocity.ranges.heading = (3.14, 3.14)
+        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
+        self.commands.base_velocity.ranges.heading = (-3.14, 3.14)
         # disable randomization for play
         self.observations.policy.enable_corruption = False
         # remove random pushing for play

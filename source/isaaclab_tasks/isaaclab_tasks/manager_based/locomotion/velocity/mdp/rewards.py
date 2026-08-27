@@ -18,7 +18,7 @@ from isaaclab.envs import mdp
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, yaw_quat
-
+from isaaclab.utils.math import matrix_from_quat
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -66,6 +66,23 @@ def feet_air_time_positive_biped(env, command_name: str, threshold: float, senso
     reward *= torch.norm(env.command_manager.get_command(command_name)[:, :2], dim=1) > 0.1
     return reward
 
+def foot_flat_penalty(
+    env: ManagerBasedRLEnv, threshold : float, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    asset = env.scene[asset_cfg.name]
+
+    rot_mats = matrix_from_quat(asset.data.body_quat_w)
+    foot_z_axis = rot_mats[:,  asset_cfg.body_ids, 2]
+
+    world_z_axis = torch.tensor([0.0, 0.0, 1.0], device=foot_z_axis.device)
+
+    z_err = torch.sum(foot_z_axis * world_z_axis, dim=-1)
+
+    # penalty = torch.sum(1.0 - dot_z, dim=1)
+    angle = torch.acos(torch.clamp(z_err, -1.0, 1.0))
+    penalty = torch.sum(torch.clamp(angle - threshold, min=0.0), dim=1)
+
+    return penalty
 
 def feet_slide(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize feet sliding.

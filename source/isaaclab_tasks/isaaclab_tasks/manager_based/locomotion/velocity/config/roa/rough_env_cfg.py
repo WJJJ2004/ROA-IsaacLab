@@ -1,9 +1,6 @@
-"""Rough terrain locomotion environment config for adult."""
+"""Rough terrain locomotion environment config for ROA."""
 
 ## NOTE VERSION MISS MATCH ISSUE (LWJ)
-"""
-
-"""
 
 from typing import Dict, Optional, Tuple
 
@@ -30,7 +27,7 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
-from isaaclab_assets import adult_CFG
+from isaaclab_assets import ROA_CFG, ROA_BASELINE_CFG
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
     LocomotionVelocityRoughEnvCfg,
     RewardsCfg,
@@ -38,12 +35,9 @@ from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
 
 
 # NOTE: randomize_imu_mount()
-
 # 매 env reset 시 IMU의 장착 pose(로컬 좌표계)를 랜덤화함.
 # 위치 오프셋(x,y,z)뿐만 아니라 방향 오프셋(roll/pitch/yaw)도 함께 적용됨.
 # IMU 좌표축은 링크 좌표축과 항상 평행하지 않을 수 있음.
-
-
 
 def randomize_imu_mount(
     env: ManagerBasedEnv,
@@ -105,7 +99,7 @@ def randomize_imu_mount(
     }
 
 
-adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
+ROA_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=100.0,
     num_rows=10,
@@ -116,7 +110,7 @@ adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     use_cache=False,
     sub_terrains={
     "flat": terrain_gen.MeshPlaneTerrainCfg(
-        proportion=7.0,
+        proportion=5.0,
     ),
 
     # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
@@ -164,34 +158,34 @@ adult_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     #    "flat": terrain_gen.MeshPlaneTerrainCfg(
     #        proportion=1.0,
     #    ),
-        # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-        #     proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
-        # ),
-        # "flat": terrain_gen.MeshPlaneTerrainCfg(
-        #     proportion=0.25,
-        # ),
-        # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-        #     proportion=1.0,
-        #     step_height_range=(0.05, 0.10),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
-        # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-        #     proportion=1.0,
-        #     step_height_range=(0.05, 0.10),
-        #     step_width=0.3,
-        #     platform_width=3.0,
-        #     border_width=1.0,
-        #     holes=False,
-        # ),
-        # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-        #     proportion=1.0,
-        #     grid_width=0.45,
-        #     grid_height_range=(0.05, 0.2),
-        #     platform_width=2.0,
-        # ),
+    # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+    #     proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
+    # ),
+    # "flat": terrain_gen.MeshPlaneTerrainCfg(
+    #     proportion=0.25,
+    # ),
+    # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+    #     proportion=1.0,
+    #     step_height_range=(0.05, 0.10),
+    #     step_width=0.3,
+    #     platform_width=3.0,
+    #     border_width=1.0,
+    #     holes=False,
+    # ),
+    # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
+    #     proportion=1.0,
+    #     step_height_range=(0.05, 0.10),
+    #     step_width=0.3,
+    #     platform_width=3.0,
+    #     border_width=1.0,
+    #     holes=False,
+    # ),
+    # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
+    #     proportion=1.0,
+    #     grid_width=0.45,
+    #     grid_height_range=(0.05, 0.2),
+    #     platform_width=2.0,
+    # ),
     #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
     #         proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
     #     ),
@@ -252,11 +246,14 @@ def velocity_push_curriculum(
 
 
 @configclass
-class adultRewards(RewardsCfg):
-    """Reward configuration for adult rough terrain locomotion."""
+class ROARewards(RewardsCfg):
+    """Reward configuration for ROA rough terrain locomotion."""
 
     # -- base tracking & termination --
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-50.0)
+    termination_penalty = RewTerm(
+        func=mdp.is_terminated, 
+        weight=-50.0
+    )
     track_lin_vel_xy_exp = RewTerm(
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
         weight=2.0,
@@ -270,7 +267,7 @@ class adultRewards(RewardsCfg):
 
     feet_air_time = RewTerm(
         func=mdp.feet_air_time_positive_biped,
-        weight=0.25,
+        weight=0.25, # 0.75 # 0.25
         params={
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg(
@@ -295,7 +292,22 @@ class adultRewards(RewardsCfg):
     )
 
     # Joint-limit & deviation penalties
-    dof_pos_limits = RewTerm(
+    dof_pos_limits_pitch = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[
+                    "right_hip_pitch",
+                    "right_hip_pitch",
+                    "left_hip_pitch",
+                    "left_hip_pitch",
+                ]
+            )
+        },
+    )
+    
+    dof_pos_limits_ankle = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-1.0,
         params={
@@ -309,10 +321,25 @@ class adultRewards(RewardsCfg):
             )
         },
     )
+    
+    dof_pos_limits_hip = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=[
+                    "right_hip_yaw",
+                    "right_hip_roll",
+                    "left_hip_yaw",
+                    "left_hip_roll",
+                ]
+            )
+        },
+    )
 
     joint_deviation_hip = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.5,
+        weight=-0.5, # -0.5
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -328,7 +355,7 @@ class adultRewards(RewardsCfg):
 
     joint_deviation_hip_pitch_knee = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.1,
+        weight=-0.1, # -0.1
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -344,7 +371,7 @@ class adultRewards(RewardsCfg):
 
     joint_deviation_ankles = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.5,
+        weight=-2.5,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -356,24 +383,24 @@ class adultRewards(RewardsCfg):
             ),
         },
     )
-
-
-## when model has torso model 
-  #  joint_deviation_arms = RewTerm(
-  #      func=mdp.joint_deviation_l1,
-  #      weight=-1.0,
-  #      params={
-  #          "asset_cfg": SceneEntityCfg(
-  #              "robot",
-  #              joint_names=[
-  #                  "torso_yaw"
-  #              ],
-  #          )
-  #      },
-  #  )
-
+    
+    ## when model has torso model 
+    #  joint_deviation_arms = RewTerm(
+    #      func=mdp.joint_deviation_l1,
+    #      weight=-1.0,
+    #      params={
+    #          "asset_cfg": SceneEntityCfg(
+    #              "robot",
+    #              joint_names=[
+    #                  "torso_yaw"
+    #              ],
+    #          )
+    #      },
+    #  )
+    
     # No stomping reward
     # Foot-impact regulariser (discourages stomping)
+    # NOTE : PLZ CHECK DISABLEMENT OF FOOT IMPACT PENALTY IN ROA PLAY ENV CFG
     foot_impact_penalty = RewTerm(
         func=mdp.contact_forces,
         weight=-1.5e-3,
@@ -387,10 +414,22 @@ class adultRewards(RewardsCfg):
             ),
         },
     )
+    
+    # # Maintain nominal standing height
+    # base_height_l2 = RewTerm(
+    #     func=mdp.base_height_l2,
+    #     weight=-0.5,
+    #     params={
+    #         "target_height": 0.65,
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "sensor_cfg": SceneEntityCfg("height_scanner"),
+    #     },
+    # )
+    
 
 
 @configclass
-class adultObservations:
+class ROAObservations:
     @configclass
     class CriticCfg(ObservationGroupCfg):
         # observation terms (order preserved)
@@ -538,8 +577,8 @@ class adultObservations:
 
 
 @configclass
-class adultCurriculumCfg:
-    """Curriculum configuration for adult push training."""
+class ROACurriculumCfg:
+    """Curriculum configuration for ROA push training."""
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
 
@@ -555,23 +594,29 @@ class adultCurriculumCfg:
     )
 
 @configclass
-class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
+class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     enable_randomization: bool = True
-    rewards: adultRewards = adultRewards()
-    observations: adultObservations = adultObservations()
-    curriculum: adultCurriculumCfg = adultCurriculumCfg()
+    use_baseline_actuator: bool = False
+    rewards: ROARewards = ROARewards()
+    observations: ROAObservations = ROAObservations()
+    curriculum: ROACurriculumCfg = ROACurriculumCfg()
 
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
 
-        # Scene
-        self.scene.robot = adult_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        if self.use_baseline_actuator is True:  # NOTE: TEST CFG
+            print("[NOTE]: THIS IS BASELINE ACTUATOR CONFIGURE!\n" * 10, end="")
+            self.scene.robot = ROA_BASELINE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        else:
+            print("[NOTE]: THIS IS IDENTIFIED ACTUATOR CONFIGURE!\n" * 10, end="")
+            self.scene.robot = ROA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base_link"
 
         # Terrains
-        # Override terrain generator with custom adult configuration
-        self.scene.terrain.terrain_generator = adult_ROUGH_TERRAINS_CFG
+        # Override terrain generator with custom ROA configuration
+        self.scene.terrain.terrain_generator = ROA_ROUGH_TERRAINS_CFG
 
         # Enable curriculum for the custom terrain generator
         if getattr(self.curriculum, "terrain_levels", None) is not None:
@@ -619,9 +664,9 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "asset_cfg": SceneEntityCfg(
                     "robot", body_names=["left_TPU_pad_1", "right_TPU_pad_1"]
                 ),
-                "static_friction_range": (0.5, 2.0), # (0.1, 2.0)  (0.05, 4.0)  sim: (0.06, 2.8)
-                "dynamic_friction_range": (0.5, 2.0), # (0.1, 2.0) (0.05, 4.0)  sim: (0.06, 3.0)
-                "restitution_range": (0.05, 0.5), # (0.0, 0.1) (0.05, 1.0)       sim: (0.03, 0.4)
+                "static_friction_range": (0.5, 1.0), # (0.1, 2.0)  (0.05, 4.0)  sim: (0.06, 2.8)
+                "dynamic_friction_range": (0.5, 1.0), # (0.1, 2.0) (0.05, 4.0)  sim: (0.06, 3.0)
+                "restitution_range": (0.0, 0.5), # (0.0, 0.1) (0.05, 1.0)       sim: (0.03, 0.4)
                 "num_buckets": 64,
                 "make_consistent": True,  # Ensure dynamic friction is always less than static friction
             },
@@ -667,8 +712,8 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "stiffness_distribution_params": (0.6, 1.4), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
-                "damping_distribution_params": (0.6, 1.4), # (0.8, 1.2) (0.5, 1.5)   sim:(0.6, 1.4)
+                "stiffness_distribution_params": (0.8, 1.2), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
+                "damping_distribution_params": (0.8, 1.2), # (0.8, 1.2) (0.5, 1.5)   sim:(0.6, 1.4)
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -680,8 +725,8 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "friction_distribution_params": (0.01, 0.5), # (0.0, 0.3) (0.0, 0.5) sim:(0.0, 0.5)
-                "armature_distribution_params": (0.6, 1.4), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
+                "friction_distribution_params": (0.9, 1.1), # (0.0, 0.3) (0.0, 0.5) sim:(0.0, 0.5)
+                "armature_distribution_params": (0.9, 1.1), # (0.8, 1.2) (0.5, 1.5) sim:(0.6, 1.4)
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -736,11 +781,11 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # self.events.base_com = None
 
         # Rewards
-        self.rewards.lin_vel_z_l2.weight = 0.0
+        self.rewards.lin_vel_z_l2.weight = 0.0 #  -0.2
         self.rewards.undesired_contacts = None
         self.rewards.flat_orientation_l2.weight = -1.0  # Penalize non-flat base orientation using L2 squared kernel.
-        self.rewards.action_rate_l2.weight = -0.05      # Penalize xy-axis base angular velocity using L2 squared kernel.
-        self.rewards.dof_acc_l2.weight = -1.25e-7
+        self.rewards.action_rate_l2.weight = -0.05 # -0.005      # Penalize xy-axis base angular velocity using L2 squared kernel.
+        self.rewards.dof_acc_l2.weight = -1.25e-7 # -1.25e-7 # 
         self.rewards.dof_acc_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot",
             joint_names=[
@@ -755,7 +800,7 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "right_knee_pitch",
             ],
         )
-        self.rewards.dof_torques_l2.weight = -1.5e-7
+        self.rewards.dof_torques_l2.weight = -2.0e-6 #  -2.0e-6
         self.rewards.dof_torques_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot",
             joint_names=[
@@ -787,13 +832,15 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             "left_hip_1",
             "left_hip_thigh_1",
             "left_thigh_1",
-            # "left_shin_1",
-            # "left_ankle_1",
+            "left_shin_1",
+            "left_ankle_1",
+            "left_foot_1",
             "right_hip_1",
             "right_hip_thigh_1",
             "right_thigh_1",
-            # "right_shin_1",
-            # "right_ankle_1",
+            "right_shin_1",
+            "right_ankle_1",
+            "right_foot_1",
             "torso_dummy_1",
         ]
         # self.terminations.fell_off_terrain = DoneTerm(
@@ -808,7 +855,10 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # )
         # Apply randomization settings based on flag
         if not self.enable_randomization:
+            print("[INFO]: Domain randomization is DISABLED!\n" * 10, end="")            
             self._disable_randomization()
+        else:
+            print("[INFO]: Domain randomization is ENABLED!\n" * 10, end="")
 
     def _disable_randomization(self):
         """Disable all randomization for easy early training.
@@ -816,8 +866,6 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         Use with command line arg: env.enable_randomization=false
         """
         
-        print("[INFO]: Disabling all domain randomization!\n" * 5, end="")
-
         # Disable events
         self.events.physics_material = None
         self.events.add_limb_masses = None
@@ -843,9 +891,9 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         }
 
         # No pushes and push curriculum
-        # self.events.push_robot = None
-        # if hasattr(self.curriculum, "velocity_push_curriculum"):
-        #     self.curriculum.velocity_push_curriculum = None
+        self.events.push_robot = None
+        if hasattr(self.curriculum, "velocity_push_curriculum"):
+            self.curriculum.velocity_push_curriculum = None
 
         # No actor observation noise
         self.observations.policy.enable_corruption = False
@@ -856,7 +904,7 @@ class adultRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
 
 @configclass
-class adultRoughEnvCfg_PLAY(adultRoughEnvCfg):
+class ROARoughEnvCfg_PLAY(ROARoughEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()

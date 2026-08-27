@@ -14,7 +14,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.actuators import DelayedPDActuatorCfg
 
-USD_PATH = "/home/robit/isaaclab_230/source/isaaclab_assets/isaaclab_assets/robots/roa_train_12dof/roa_train_12dof.usd"
+USD_PATH = "/home/robit/isaaclab_230/source/isaaclab_assets/isaaclab_assets/robots/roa_deploy_12dof/roa_deploy_12dof.usd"
 
 _INIT_JOINT_POS = {
    # "torso_yaw": 0.0,
@@ -88,15 +88,15 @@ _JOINT_META = {
         "arm": 0.0004,
     },
     "left_ankle_pitch": {
-        "kp": 40.0,
-        "kd": 1.0,
+        "kp": 30.0,
+        "kd": 2.5,
         "torque": 11.9,
         "vmax": 5.0,
         "arm": 0.02,
     },
     "left_ankle_roll": {
-        "kp": 40.0 * _RSU_KVALUE,
-        "kd": 1.0 * _RSU_KVALUE,
+        "kp": 30.0 * _RSU_KVALUE,
+        "kd": 2.5 * _RSU_KVALUE,
         "torque": 11.9,
         "vmax": 5.0,
         "arm": 0.02,
@@ -132,15 +132,15 @@ _JOINT_META = {
         "arm": 0.0004,
     },
     "right_ankle_pitch": {
-        "kp": 40.0,
-        "kd": 1.0,
+        "kp": 30.0,
+        "kd": 2.5,
         "torque": 11.9,
         "vmax": 5.0,
         "arm": 0.02,
     },
     "right_ankle_roll": {
-        "kp": 40.0 * _RSU_KVALUE,
-        "kd": 1.0 * _RSU_KVALUE,
+        "kp": 30.0 * _RSU_KVALUE,
+        "kd": 2.5 * _RSU_KVALUE,
         "torque": 11.9,
         "vmax": 5.0,
         "arm": 0.02,
@@ -166,18 +166,18 @@ _JOINT_META = {
 _ACTUATORS = {
     jn: DelayedPDActuatorCfg(
         joint_names_expr=[jn],
-        effort_limit=meta["torque"]*0.75,    # reduce torque limit to 75% for better sim stability with delay
+        effort_limit=meta["torque"],    # reduce torque limit to 75% for better sim stability with delay
         velocity_limit=meta["vmax"],
         stiffness={jn: meta["kp"]},
         damping={jn: meta["kd"]},
         armature=meta["arm"],
-        min_delay=7, # 2
-        max_delay=12, # 12
+        min_delay=0,
+        max_delay=1,
     )
     for jn, meta in _JOINT_META.items()
 }
 
-adult_CFG = ArticulationCfg(
+adult_v2_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=USD_PATH,
         activate_contact_sensors=True,

@@ -27,3 +27,7 @@ from .shadow_hand import *
 from .spot import *
 from .unitree import *
 from .universal_robots import *
+from .adult import *
+from .adult_v2 import *
+from .roa_pace import *
+from .roa_baseline import *

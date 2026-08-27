@@ -70,8 +70,49 @@ def root_height_below_minimum(
     # extract the used quantities (to enable type-hinting)
     asset: RigidObject = env.scene[asset_cfg.name]
     return asset.data.root_pos_w[:, 2] < minimum_height
+def foot_height_below_minimum(
+    env: ManagerBasedRLEnv, 
+    minimum_height: float, 
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """발바닥이 minimum_height 아래로 떨어지면 terminate"""
+    asset: Articulation = env.scene[asset_cfg.name]
+    # body_ids로 발바닥 body index 가져옴
+    body_ids = asset_cfg.body_ids
+    # 발바닥 위치 (world frame)
+    foot_pos_w = asset.data.body_pos_w[:, body_ids, 2]  # (num_envs, num_feet)
+  
+    # 두 발 중 하나라도 아래로 떨어지면 terminate
+    return foot_pos_w.min(dim=1)[0] < minimum_height
+# def out_of_terrain_bounds(
+#     env: ManagerBasedRLEnv,
+#     margin: float = 2.0,
+#     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+# ) -> torch.Tensor:
+#     """로봇이 terrain + border 경계 근처에 가면 terminate"""
+#     asset: Articulation = env.scene[asset_cfg.name]
+#     root_pos_xy = asset.data.root_pos_w[:, :2]
 
+#     # terrain cfg에서 직접 읽기
+#     terrain_cfg = env.scene.terrain.cfg.terrain_generator
+#     size = terrain_cfg.size          # (8.0, 8.0)
+#     num_rows = terrain_cfg.num_rows  # 10
+#     num_cols = terrain_cfg.num_cols  # 20
+#     border = terrain_cfg.border_width  # 20.0
 
+#     # 전체 ground 크기 (terrain + border 양쪽)
+#     total_x = size[0] * num_cols + border * 2  # 8*20 + 40 = 200m
+#     total_y = size[1] * num_rows + border * 2  # 8*10 + 40 = 120m
+
+#     half_x = total_x / 2.0 - margin  # 98m
+#     half_y = total_y / 2.0 - margin  # 58m
+
+#     out_of_bounds = (
+#         (root_pos_xy[:, 0].abs() > half_x) |
+#         (root_pos_xy[:, 1].abs() > half_y)
+#     )
+
+#     return out_of_bounds
 """
 Joint terminations.
 """
