@@ -36,7 +36,7 @@ class ROADelayedDCMotor(DCMotor):
             low=self.cfg.min_delay,
             high=self.cfg.max_delay + 1,
             size=(len(env_ids),),
-            dtype=torch.long,
+            dtype=torch.int,
             device=self._device,
         )
         self._position_delay.set_time_lag(time_lags, env_ids)

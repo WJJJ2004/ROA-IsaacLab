@@ -9,7 +9,7 @@ How to use:
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task Isaac-Velocity-Rough-ROA-v0 \
   --headless \
-  --num_envs 1024
+  --num_envs 8192
 
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task Isaac-Velocity-Rough-ROA-v0 \
@@ -22,7 +22,13 @@ How to use:
   --video \
   --video_interval 10000 \
   --video_length 250   
-
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+  --task Isaac-Velocity-Rough-ROA-v0 \
+  --headless \
+  --num_envs 4096 \
+  --resume \
+  --load_run 2026-08-27_17-38-07 \
+  --checkpoint model_1150.pt
 
 
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
@@ -50,10 +56,10 @@ How to use:
   --headless \
   --num_envs 100 \
   --resume \
-  --load_run 2026-08-26_16-27-43 \
-  --checkpoint model_33000.pt \
+  --load_run 2026-08-27_18-44-38 \
+  --checkpoint /home/robit/isaaclab_230/logs/rsl_rl/ROA_rough/2026-08-26_16-27-43/model_25000.pt \
   --video \
-  --video_length 100
+  --video_length 1000
 
 
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \

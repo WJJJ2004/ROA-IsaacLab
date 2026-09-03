@@ -5,13 +5,12 @@ How to use:
 1. Training from checkpoint (without rendering):
 
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
-  --task Isaac-Velocity-Rough-adult-v0 \
+  --task Isaac-Velocity-Rough-ROA-v0 \
   --headless \
   --num_envs 4096 \
-  --max_iterations 30000 \
   --resume \
-  --load_run 2026-06-24_21-16-54 \
-  --checkpoint model_9000.pt
+  --load_run 2026-08-27_17-38-07 \
+  --checkpoint model_1150.pt
 
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task Isaac-Velocity-Rough-adult-v0 \

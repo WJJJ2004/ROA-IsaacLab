@@ -716,9 +716,13 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         if self.use_baseline_actuator is True:  # NOTE: TEST CFG
             print("[NOTE]: THIS IS BASELINE ACTUATOR CONFIGURE!\n" * 10, end="")
             self.scene.robot = ROA_BASELINE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+            print(f"-> Baseline USD Path: {self.scene.robot.spawn.usd_path} \n" * 10, end="")
         else:
             print("[NOTE]: THIS IS IDENTIFIED ACTUATOR CONFIGURE!\n" * 10, end="")
             self.scene.robot = ROA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+            print(f"-> Identified USD Path: {self.scene.robot.spawn.usd_path} \n" * 10, end="")
+            
+        # print(f"[IDENTIFIED] Robot USD/Prim Path: {self.scene.robot.prim_path}" * 10, end="")
 
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base_link"
 
@@ -745,11 +749,11 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             func=mdp.randomize_rigid_body_com,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", body_names="base_link"),
+                "asset_cfg": SceneEntityCfg("robot", body_names="torso_dummy_1"),
                 "com_range": {
-                    "x": (-0.015, 0.015),
-                    "y": (-0.015, 0.015),
-                    "z": (-0.005, 0.005),
+                    "x": (-0.02, 0.02),
+                    "y": (-0.02, 0.02),
+                    "z": (-0.01, 0.01),
                 },
             },                                    
         )
