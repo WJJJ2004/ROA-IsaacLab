@@ -444,7 +444,7 @@ class ROARewards(RewardsCfg):
 
     joint_deviation_ankles = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.5,
+        weight=-0.25,  # V2: -0.5
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -478,7 +478,7 @@ class ROARewards(RewardsCfg):
         func=mdp.contact_forces,
         weight=-1.5e-3,
         params={
-            "threshold": 338.0, 
+            "threshold": 399.0,  # V2: 338.0 N; scaled by 33.616 / 28.465
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
                 body_names=[
@@ -490,7 +490,7 @@ class ROARewards(RewardsCfg):
 
     ankle_action_rate_l2 = RewTerm(
         func=selected_action_rate_l2,
-        weight=-0.2,
+        weight=-0.05,  # V2: -0.2
         params={"action_indices": _ANKLE_ACTION_INDICES},
     )
 
@@ -694,15 +694,15 @@ class ROACurriculumCfg:
         func=velocity_push_curriculum,
         params={
             "min_push": 0.01,
-            "max_push": 1.0,
-            "curriculum_start_step": 24 * 500,
+            "max_push": 0.5,  # V2: 1.0
+            "curriculum_start_step": 24 * 5000,  # V2: 24 * 500
             "curriculum_stop_step": 24 * 70000,
         },
     )
 
 @configclass
 class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
-    enable_randomization: bool = True
+    enable_randomization: bool = False  # V2: True; establish V3 nominal learnability first
     use_baseline_actuator: bool = False
     rewards: ROARewards = ROARewards()
     actions: ROAActions = ROAActions()
@@ -712,6 +712,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
+
+        self.scene.num_envs = 8192  # V2 run default: 4096; prior reference run used 8192
 
         if self.use_baseline_actuator is True:  # NOTE: TEST CFG
             print("[NOTE]: THIS IS BASELINE ACTUATOR CONFIGURE!\n" * 10, end="")
@@ -730,9 +732,9 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # Override terrain generator with custom ROA configuration
         self.scene.terrain.terrain_generator = ROA_ROUGH_TERRAINS_CFG
 
-        # Enable curriculum for the custom terrain generator
-        if getattr(self.curriculum, "terrain_levels", None) is not None:
-            self.scene.terrain.terrain_generator.curriculum = True
+        # Flat-only V3 diagnosis does not need terrain-level progression.
+        self.curriculum.terrain_levels = None  # V2: enabled with mdp.terrain_levels_vel
+        self.scene.terrain.terrain_generator.curriculum = False  # V2: True
 
         # Imu
         self.scene.imu = ImuCfg(
@@ -749,11 +751,13 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             func=mdp.randomize_rigid_body_com,
             mode="reset",
             params={
+                # V2 training run: body_names="base_link".  For V3, residual
+                # upper-body uncertainty belongs on the torso assembly.
                 "asset_cfg": SceneEntityCfg("robot", body_names="torso_dummy_1"),
                 "com_range": {
-                    "x": (-0.02, 0.02),
-                    "y": (-0.02, 0.02),
-                    "z": (-0.01, 0.01),
+                    "x": (-0.01, 0.01),  # V2: (-0.02, 0.02) on base_link
+                    "y": (-0.01, 0.01),  # V2: (-0.02, 0.02) on base_link
+                    "z": (-0.005, 0.005),  # V2: (-0.01, 0.01) on base_link
                 },
             },                                    
         )
@@ -776,8 +780,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "asset_cfg": SceneEntityCfg(
                     "robot", body_names=["left_TPU_pad_1", "right_TPU_pad_1"]
                 ),
-                "static_friction_range": (0.45, 1.15),
-                "dynamic_friction_range": (0.35, 1.0),
+                "static_friction_range": (0.7, 1.15),  # V2: (0.45, 1.15)
+                "dynamic_friction_range": (0.6, 1.0),  # V2: (0.35, 1.0)
                 "restitution_range": (0.0, 0.1),
                 "num_buckets": 64,
                 "make_consistent": True,  # Ensure dynamic friction is always less than static friction
@@ -811,7 +815,9 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                         "imu_sensor_1",
                     ],
                 ),
-                "mass_distribution_params": (0.9, 1.1),
+                # V3 is measurement-centered; widen only after nominal
+                # inertias and correlated torso/arm uncertainty are verified.
+                "mass_distribution_params": (0.98, 1.02),  # V2: (0.9, 1.1)
                 "operation": "scale",
                 "distribution": "uniform",
                 "recompute_inertia": True,
@@ -824,8 +830,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "stiffness_distribution_params": (0.9, 1.1),
-                "damping_distribution_params": (0.85, 1.15),
+                "stiffness_distribution_params": (0.95, 1.05),  # V2: (0.9, 1.1)
+                "damping_distribution_params": (0.9, 1.1),  # V2: (0.85, 1.15)
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -839,7 +845,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-                "armature_distribution_params": (0.85, 1.15),
+                "armature_distribution_params": (0.95, 1.05),  # V2: (0.85, 1.15)
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -847,8 +853,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # Joint initialization randomization
         # Reset by offset is needed since the default is to scale by zero
-        self.events.reset_robot_joints.params["position_range"] = (-0.05, 0.05)
-        self.events.reset_robot_joints.params["velocity_range"] = (-0.2, 0.2)
+        self.events.reset_robot_joints.params["position_range"] = (-0.02, 0.02)  # V2: (-0.05, 0.05)
+        self.events.reset_robot_joints.params["velocity_range"] = (0.0, 0.0)  # V2: (-0.2, 0.2)
         self.events.reset_robot_joints.func = mdp.reset_joints_by_offset
 
         self.events.push_robot.mode = "interval"
@@ -894,10 +900,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # self.events.base_com = None
 
         # Rewards
-        self.rewards.lin_vel_z_l2.weight = -0.5
+        self.rewards.lin_vel_z_l2.weight = -0.2  # V2: -0.5
         self.rewards.undesired_contacts = None
         self.rewards.flat_orientation_l2.weight = -1.0  # Penalize non-flat base orientation using L2 squared kernel.
-        self.rewards.action_rate_l2.weight = -0.1
+        self.rewards.action_rate_l2.weight = -0.05  # V2: -0.1
         self.rewards.dof_acc_l2.weight = -1.25e-7 # -1.25e-7 # 
         self.rewards.dof_acc_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot",
@@ -934,10 +940,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         )
 
         # Commands
-        self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.0)
-        self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
-        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
-        self.commands.base_velocity.rel_standing_envs = 0.2
+        self.commands.base_velocity.ranges.lin_vel_x = (-0.3, 0.3)  # V2: (-1.0, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_y = (-0.15, 0.15)  # V2: (-0.5, 0.5)
+        self.commands.base_velocity.ranges.ang_vel_z = (-0.3, 0.3)  # V2: (-1.0, 1.0)
+        self.commands.base_velocity.rel_standing_envs = 0.5  # V2: 0.2
 
         # Terminations >> ALL LINKS WITHOUT FOOT (COUNT = 12)
         self.terminations.base_contact.params["sensor_cfg"].body_names = [
@@ -981,6 +987,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         
         # Disable events
         self.events.physics_material = None
+        self.events.base_com = None  # V2 bug: CoM DR remained active when randomization was disabled
         self.events.add_limb_masses = None
         self.events.randomize_actuator_gains = None
         self.events.randomize_joint_properties = None
@@ -1003,17 +1010,20 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             },
         }
 
-        # No pushes and push curriculum
+        # No pushes or curricula in the nominal V3 learnability baseline.
         self.events.push_robot = None
         if hasattr(self.curriculum, "velocity_push_curriculum"):
             self.curriculum.velocity_push_curriculum = None
+        if hasattr(self.curriculum, "terrain_levels"):
+            self.curriculum.terrain_levels = None
+        if self.scene.terrain.terrain_generator is not None:
+            self.scene.terrain.terrain_generator.curriculum = False
 
         # No actor observation noise
         self.observations.policy.enable_corruption = False
 
-        # No foot impact penalty
-        if hasattr(self.rewards, "foot_impact_penalty"):
-            self.rewards.foot_impact_penalty = None
+        # Keep reward terms independent from the DR switch.  V2 disabled the
+        # foot-impact term here; V3 retains it with the mass-normalized threshold.
 
 
 @configclass
