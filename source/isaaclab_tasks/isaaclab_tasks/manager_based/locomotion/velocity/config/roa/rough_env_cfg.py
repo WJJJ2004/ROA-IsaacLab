@@ -397,7 +397,7 @@ class ROARewards(RewardsCfg):
     
     dof_pos_limits_hip = RewTerm(
         func=mdp.joint_pos_limits,
-        weight=-0.5,
+        weight=-5.0, # -0.5
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -936,10 +936,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         )
 
         # Commands
-        self.commands.base_velocity.ranges.lin_vel_x = (-0.3, 0.3)  # V2: (-1.0, 1.0)
-        self.commands.base_velocity.ranges.lin_vel_y = (-0.15, 0.15)  # V2: (-0.5, 0.5)
-        self.commands.base_velocity.ranges.ang_vel_z = (-0.3, 0.3)  # V2: (-1.0, 1.0)
-        self.commands.base_velocity.rel_standing_envs = 0.5  # V2: 0.2
+        self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.0)  # V2: (-1.0, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)  # V2: (-0.5, 0.5)
+        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)  # V2: (-1.0, 1.0)
+        self.commands.base_velocity.rel_standing_envs = 0.2  # V2: 0.2
 
         # Terminations >> ALL LINKS WITHOUT FOOT (COUNT = 12)
         self.terminations.base_contact.params["sensor_cfg"].body_names = [

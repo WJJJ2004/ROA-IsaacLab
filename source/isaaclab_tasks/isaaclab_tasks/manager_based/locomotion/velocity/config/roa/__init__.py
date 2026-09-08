@@ -17,11 +17,13 @@ How to use:
   --num_envs 4096 \
   --max_iterations 30000 \
   --resume \
-  --load_run 2026-08-27_02-11-07 \
+  --load_run 2026-09-03_19-37-21 \
   --checkpoint model_6700.pt \
   --video \
   --video_interval 10000 \
   --video_length 250   
+
+
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task Isaac-Velocity-Rough-ROA-v0 \
   --headless \
@@ -56,8 +58,8 @@ How to use:
   --headless \
   --num_envs 100 \
   --resume \
-  --load_run 2026-08-27_18-44-38 \
-  --checkpoint /home/robit/isaaclab_230/logs/rsl_rl/ROA_rough/2026-08-26_16-27-43/model_25000.pt \
+  --load_run 2026-09-07_18-08-41 \
+  --checkpoint /home/robit/isaaclab_230/logs/rsl_rl/ROA_rough/2026-09-07_18-08-41/model_19850.pt \
   --video \
   --video_length 1000
 

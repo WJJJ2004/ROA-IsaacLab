@@ -170,28 +170,50 @@ ROA_RS04_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
 # -----------------------------------------------------------------------------
 RSU_KVALUE = 1.37  # RSU K-value ratio (ankle_roll / ankle_pitch)
 
-ROA_RSU_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
+ROA_ROLL_RSU_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
     joint_names_expr=[
-        ".*_ankle_pitch",
         ".*_ankle_roll",
     ],
-    saturation_effort=11.9,
-    effort_limit=11.9,
+    saturation_effort=26.0,
+    effort_limit=26.0,
     velocity_limit=5.0,
 
     stiffness={
-        ".*_ankle_pitch": 25.0,
         ".*_ankle_roll": 25.0 * RSU_KVALUE,
     },
 
     damping={
-        ".*_ankle_pitch": 1.2,
         ".*_ankle_roll": 1.2 * RSU_KVALUE,
     },
     
     armature={
-        ".*_ankle_pitch": 0.04255,
         ".*_ankle_roll": 0.05847,
+    },
+    friction={".*": 0.0},
+    dynamic_friction={".*": 0.0},
+    viscous_friction={".*": 0.0},
+    min_delay=RSU_MIN_DELAY_STEPS,
+    max_delay=RSU_MAX_DELAY_STEPS,
+)
+
+ROA_PITCH_RSU_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
+    joint_names_expr=[
+        ".*_ankle_pitch",
+    ],
+    saturation_effort=20.5,
+    effort_limit=20.5,
+    velocity_limit=5.0,
+
+    stiffness={
+        ".*_ankle_pitch": 25.0,
+    },
+
+    damping={
+        ".*_ankle_pitch": 1.2,
+    },
+    
+    armature={
+        ".*_ankle_pitch": 0.04255,
     },
     friction={".*": 0.0},
     dynamic_friction={".*": 0.0},
@@ -206,7 +228,8 @@ ROA_RSU_PACE_ACTUATOR_CFG = ROADelayedDCMotorCfg(
 _ROA_PACE_ACTUATORS = {
     "robstride_03": ROA_RS03_PACE_ACTUATOR_CFG,
     "robstride_04": ROA_RS04_PACE_ACTUATOR_CFG,
-    "rsu": ROA_RSU_PACE_ACTUATOR_CFG,
+    "rsu_roll": ROA_ROLL_RSU_PACE_ACTUATOR_CFG,
+    "rsu_pitch": ROA_PITCH_RSU_PACE_ACTUATOR_CFG,
 }
 
 
