@@ -10,11 +10,16 @@ Only the actuator dictionary is replaced for the training environment.
 """
 
 import math
+from pathlib import Path
 
 from isaaclab.assets.articulation import ArticulationCfg
 from pace_sim2real.tasks.manager_based.pace.assets.roa.roa import ROA_CFG
 
 from .roa_delayed_dc_motor import ROADelayedDCMotorCfg
+from ._roa_v4 import ROA_V4_INITIAL_ROOT_HEIGHT, resolve_roa_v4_usd
+
+
+ROA_V4_USD_PATH = resolve_roa_v4_usd(Path(__file__))
 
 # RVIZ TUNED VALUE (08/12/2026 UPDATE)
 _INIT_JOINT_POS = {
@@ -236,8 +241,9 @@ _ROA_PACE_ACTUATORS = {
 # Reuse every robot/physics setting from the PACE ROA asset and replace only
 # the actuator dictionary.
 ROA_CFG = ROA_CFG.replace(
+    spawn=ROA_CFG.spawn.replace(usd_path=ROA_V4_USD_PATH),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.75),
+        pos=(0.0, 0.0, ROA_V4_INITIAL_ROOT_HEIGHT),
         joint_pos=_INIT_JOINT_POS,
         joint_vel={".*": 0.0},
     ),

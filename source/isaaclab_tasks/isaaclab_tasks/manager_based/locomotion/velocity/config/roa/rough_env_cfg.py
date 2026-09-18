@@ -30,6 +30,11 @@ from isaaclab.utils.math import quat_from_euler_xyz
 from isaaclab.utils.modifiers import ModifierBase, ModifierCfg
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab_assets import ROA_CFG, ROA_BASELINE_CFG
+from isaaclab_assets.robots._roa_v4 import (
+    ROA_V4_BODY_NAMES,
+    ROA_V4_FOOT_CONTACT_BODY_NAMES,
+    ROA_V4_NON_FOOT_CONTACT_BODY_NAMES,
+)
 from isaaclab_assets.robots.roa_pace import ROA_POLICY_JOINT_ORDER
 from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
     LocomotionVelocityRoughEnvCfg,
@@ -345,7 +350,7 @@ class ROARewards(RewardsCfg):
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
-                body_names=["left_TPU_pad_1", "right_TPU_pad_1"],
+                body_names=ROA_V4_FOOT_CONTACT_BODY_NAMES,
             ),
             "threshold": 0.4,
         },
@@ -356,10 +361,10 @@ class ROARewards(RewardsCfg):
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
-                body_names=["left_TPU_pad_1", "right_TPU_pad_1"],
+                body_names=ROA_V4_FOOT_CONTACT_BODY_NAMES,
             ),
             "asset_cfg": SceneEntityCfg(
-                "robot", body_names=["left_TPU_pad_1", "right_TPU_pad_1"]
+                "robot", body_names=ROA_V4_FOOT_CONTACT_BODY_NAMES
             ),
         },
     )
@@ -478,12 +483,10 @@ class ROARewards(RewardsCfg):
         func=mdp.contact_forces,
         weight=-1.5e-3,
         params={
-            "threshold": 399.0,  # V2: 338.0 N; scaled by 33.616 / 28.465
+            "threshold": 446.0,  # V2: 338.0 N; scaled by 33.616 / 28.465
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
-                body_names=[
-                    "left_TPU_pad_1", "right_TPU_pad_1"
-                ],
+                body_names=ROA_V4_FOOT_CONTACT_BODY_NAMES,
             ),
         },
     )
@@ -755,11 +758,11 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "com_range": {
                     "x": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
                     "y": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
-                    "z": (-0.02, 0.02),  # V3 nominal proposal: (-0.005, 0.005) on torso_dummy_1
+                    "z": (-0.04, 0.04),  # V3 nominal proposal: (-0.005, 0.005) on torso_dummy_1
                 },
-            },                                    
+            },
         )
-        
+
         # self.events.base_external_force_torque =  = EventTerm(
         #     func=mdp.apply_external_force_torque,
         #     mode="reset",
@@ -776,7 +779,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg(
-                    "robot", body_names=["left_TPU_pad_1", "right_TPU_pad_1"]
+                    "robot", body_names=ROA_V4_FOOT_CONTACT_BODY_NAMES
                 ),
                 "static_friction_range": (0.45, 1.15),  # V3 nominal proposal: (0.7, 1.15)
                 "dynamic_friction_range": (0.35, 1.0),  # V3 nominal proposal: (0.6, 1.0)
@@ -786,32 +789,14 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             },
         )
 
-        # Individual link mass randomization for robustness >> ALL LINKS (COUNTS = 14)
+        # Individual link mass randomization for all authored V4 rigid bodies.
         self.events.add_limb_masses = EventTerm(
             func=mdp.randomize_rigid_body_mass,
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg(
                     "robot",
-                    body_names=[ 
-                        "base_link",
-                        "left_hip_1",
-                        "left_hip_thigh_1",
-                        "left_thigh_1",
-                        "left_shin_1",
-                        "left_ankle_1",
-                        "left_foot_1",
-                        "right_hip_1",
-                        "right_hip_thigh_1",
-                        "right_thigh_1",
-                        "right_shin_1",
-                        "right_ankle_1",
-                        "right_foot_1",
-                        "torso_dummy_1",
-                        "left_TPU_pad_1",
-                        "right_TPU_pad_1",
-                        "imu_sensor_1",
-                    ],
+                    body_names=ROA_V4_BODY_NAMES,
                 ),
                 "mass_distribution_params": (0.9, 1.1),  # V3 nominal proposal: (0.98, 1.02)
                 "operation": "scale",
@@ -941,23 +926,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)  # V2: (-1.0, 1.0)
         self.commands.base_velocity.rel_standing_envs = 0.2  # V2: 0.2
 
-        # Terminations >> ALL LINKS WITHOUT FOOT (COUNT = 12)
-        self.terminations.base_contact.params["sensor_cfg"].body_names = [
-            "base_link",
-            "left_hip_1",
-            "left_hip_thigh_1",
-            "left_thigh_1",
-            "left_shin_1",
-            "left_ankle_1",
-            "left_foot_1",
-            "right_hip_1",
-            "right_hip_thigh_1",
-            "right_thigh_1",
-            "right_shin_1",
-            "right_ankle_1",
-            "right_foot_1",
-            "torso_dummy_1",
-        ]
+        # Terminate on contact by any V4 body except the intended TPU pads.
+        self.terminations.base_contact.params["sensor_cfg"].body_names = (
+            ROA_V4_NON_FOOT_CONTACT_BODY_NAMES
+        )
         # self.terminations.fell_off_terrain = DoneTerm(
         #     func=mdp.foot_height_below_minimum,
         #     params={"minimum_height": -0.3, "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"])},

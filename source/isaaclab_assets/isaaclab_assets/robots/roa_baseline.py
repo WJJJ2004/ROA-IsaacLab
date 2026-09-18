@@ -14,7 +14,9 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.actuators import DelayedPDActuatorCfg
 
-USD_PATH = "/home/robit/pace-sim2real/source/pace_sim2real/pace_sim2real/tasks/manager_based/pace/assets/roa/roa_deploy/roa_deploy.usd"
+from ._roa_v4 import ROA_V4_INITIAL_ROOT_HEIGHT, resolve_roa_v4_usd
+
+USD_PATH = resolve_roa_v4_usd(Path(__file__))
 
 # RVIZ TUNED VALUE (08/12/2026 UPDATE)
 _INIT_JOINT_POS = {
@@ -198,7 +200,7 @@ ROA_BASELINE_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.7),
+        pos=(0.0, 0.0, ROA_V4_INITIAL_ROOT_HEIGHT),
         joint_pos=_INIT_JOINT_POS,
         joint_vel={".*": 0.0},
     ),
