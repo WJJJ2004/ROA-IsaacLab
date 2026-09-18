@@ -751,11 +751,11 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             func=mdp.randomize_rigid_body_com,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", body_names="base_link"),  # V3 nominal proposal: torso_dummy_1
+                "asset_cfg": SceneEntityCfg("robot", body_names="torso_dummy_1"),  # V3 nominal proposal: torso_dummy_1
                 "com_range": {
-                    "x": (-0.02, 0.02),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
-                    "y": (-0.02, 0.02),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
-                    "z": (-0.01, 0.01),  # V3 nominal proposal: (-0.005, 0.005) on torso_dummy_1
+                    "x": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
+                    "y": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
+                    "z": (-0.02, 0.02),  # V3 nominal proposal: (-0.005, 0.005) on torso_dummy_1
                 },
             },                                    
         )
