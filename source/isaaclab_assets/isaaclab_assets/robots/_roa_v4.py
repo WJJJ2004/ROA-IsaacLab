@@ -1,9 +1,9 @@
-"""Shared ROA V4 USD path and rigid-body name definitions."""
+"""Shared ROA V4-2 USD path and rigid-body name definitions."""
 
 from pathlib import Path
 
 
-ROA_V4_USD_RELATIVE_PATH = Path("roa_v4_12dof/roa_v4_12dof.usd")
+ROA_V4_USD_RELATIVE_PATH = Path("roa_v4-2/roa_v4-2.usd")
 
 
 def resolve_roa_v4_usd(start: Path) -> str:
@@ -34,25 +34,13 @@ ROA_V4_BODY_NAMES = [
     "right_TPU_pad_1",
     "torso_dummy_1",
     "imu_sensor_1",
-    "left_shoulder_motor_1",
     "left_shoulder_1",
-    "left_shoulder_roll_motor_1",
     "left_upper_arm_1",
-    "left_upper_arm_motor_1",
     "left_lower_arm_1",
-    "left_arm_pitch_motor_1",
     "left_hand_1",
-    "neck_pan_motor_1",
-    "neck_1",
-    "neck_pitch_motor_1",
-    "head_1",
-    "right_shoulder_motor_1",
     "right_shoulder_1",
-    "right_shoulder_roll_motor_1",
     "right_upper_arm_1",
-    "right_upper_arm_motor_1",
     "right_lower_arm_1",
-    "right_arm_pitch_motor_1",
     "right_hand_1",
 ]
 
