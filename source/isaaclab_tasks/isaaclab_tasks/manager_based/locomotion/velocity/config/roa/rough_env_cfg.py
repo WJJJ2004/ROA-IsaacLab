@@ -28,6 +28,7 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
 from isaaclab.utils.modifiers import ModifierBase, ModifierCfg
+from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as Gnoise
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab_assets import ROA_CFG, ROA_BASELINE_CFG
 from isaaclab_assets.robots._roa_v4 import (
@@ -43,6 +44,20 @@ from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
 
 
 _ANKLE_ACTION_INDICES = (8, 9, 10, 11)
+_HIP_ROLL_ACTION_INDICES = tuple(
+    ROA_POLICY_JOINT_ORDER.index(name) for name in ("left_hip_roll", "right_hip_roll")
+)
+_POLICY_ACTION_SCALE = 0.5
+
+# Provisional per-joint observation variation from motor 2/type 06, no-load
+# recording 20261007_215320_417588. Use the largest settled-hold population
+# standard deviation per channel (baseline/final/complete_hold), with the
+# user-requested 20% margin on sigma. Units: rad and rad/s before obs scaling.
+# This does not identify moving sensor error, calibration bias, or RSU noise.
+# Evidence: analysis/no_load_feedback_analysis_20261007_215320/summary.json
+_FEEDBACK_NOISE_MARGIN = 1.2
+_MEASURED_JOINT_POS_STD = 0.00019125269548631325
+_MEASURED_JOINT_VEL_STD = 0.0658159506413723
 
 # Virtual RSU workspace selected by rsu_joint_limit_generator.py.  These are
 # absolute virtual-joint targets, not policy-space action bounds.
@@ -55,6 +70,18 @@ def selected_action_rate_l2(env: ManagerBasedEnv, action_indices: tuple[int, ...
     indices = torch.tensor(action_indices, device=env.device, dtype=torch.long)
     delta = env.action_manager.action[:, indices] - env.action_manager.prev_action[:, indices]
     return torch.sum(torch.square(delta), dim=1)
+
+
+def selected_target_deviation_l1(env: ManagerBasedEnv, action_indices: tuple[int, ...]) -> torch.Tensor:
+    """Penalize pre-clip position-target offsets from the default pose, in radians.
+
+    This ROA action uses default offsets and a uniform scale. Using raw actions
+    keeps penalizing larger demands even when clipping or a hard stop prevents
+    the measured joint from moving farther.
+    """
+    indices = torch.tensor(action_indices, device=env.device, dtype=torch.long)
+    offsets = env.action_manager.action[:, indices] * _POLICY_ACTION_SCALE
+    return torch.sum(torch.abs(offsets), dim=1)
 
 
 class SelectiveOneStepDelay(ModifierBase):
@@ -103,7 +130,7 @@ class ROAActions:
         asset_name="robot",
         joint_names=ROA_POLICY_JOINT_ORDER,
         preserve_order=True,
-        scale=0.5,
+        scale=_POLICY_ACTION_SCALE,
         use_default_offset=True,
         clip={
             ".*_ankle_pitch": _ANKLE_PITCH_LIMIT,
@@ -431,6 +458,28 @@ class ROARewards(RewardsCfg):
         },
     )
 
+    # Existing hip term covers yaw and roll at -0.5. This adds another -0.5
+    # only to roll, leaving yaw and the sagittal walking joints unchanged.
+    joint_deviation_hip_roll = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.5,
+        params={"asset_cfg": SceneEntityCfg(
+            "robot", joint_names=["left_hip_roll", "right_hip_roll"]
+        )},
+    )
+
+    hip_roll_target_deviation = RewTerm(
+        func=selected_target_deviation_l1,
+        weight=-0.5,
+        params={"action_indices": _HIP_ROLL_ACTION_INDICES},
+    )
+
+    ankle_target_deviation = RewTerm(
+        func=selected_target_deviation_l1,
+        weight=-0.25,
+        params={"action_indices": _ANKLE_ACTION_INDICES},
+    )
+
     joint_deviation_hip_pitch_knee = RewTerm(
         func=mdp.joint_deviation_l1,
         weight=-0.1, # -0.1
@@ -449,7 +498,7 @@ class ROARewards(RewardsCfg):
 
     joint_deviation_ankles = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-0.25,  # V2: -0.5
+        weight=-0.5,  # Filter-free fine-tune: twice the previous state penalty.
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=[
@@ -650,7 +699,7 @@ class ROAObservations:
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
             },
-            noise=Unoise(n_min=-0.02, n_max=0.02),
+            noise=Gnoise(mean=0.0, std=_MEASURED_JOINT_POS_STD * _FEEDBACK_NOISE_MARGIN),
             modifiers=[SelectiveOneStepDelayCfg()],
         )
         joint_vel = ObsTerm(
@@ -658,7 +707,7 @@ class ROAObservations:
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
             },
-            noise=Unoise(n_min=-0.2, n_max=0.2),
+            noise=Gnoise(mean=0.0, std=_MEASURED_JOINT_VEL_STD * _FEEDBACK_NOISE_MARGIN),
             modifiers=[SelectiveOneStepDelayCfg()],
         )
         # IMU observations
@@ -754,7 +803,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             func=mdp.randomize_rigid_body_com,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", body_names="torso_dummy_1"),  # V3 nominal proposal: torso_dummy_1
+                # CoM DR is restricted to torso; mdp resamples about its initial CoM.
+                "asset_cfg": SceneEntityCfg("robot", body_names="torso_dummy_1"),
                 "com_range": {
                     "x": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
                     "y": (-0.03, 0.03),  # V3 nominal proposal: (-0.01, 0.01) on torso_dummy_1
@@ -884,7 +934,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.lin_vel_z_l2.weight = -0.2  # V2: -0.5
         self.rewards.undesired_contacts = None
         self.rewards.flat_orientation_l2.weight = -1.0  # Penalize non-flat base orientation using L2 squared kernel.
-        self.rewards.action_rate_l2.weight = -0.05  # V2: -0.1
+        self.rewards.action_rate_l2.weight = -0.10  # Filter-free fine-tune: twice the previous penalty.
         self.rewards.dof_acc_l2.weight = -1.25e-7 # -1.25e-7 # 
         self.rewards.dof_acc_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot",

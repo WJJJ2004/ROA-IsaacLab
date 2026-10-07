@@ -389,11 +389,13 @@ def randomize_rigid_body_com(
     com_range: dict[str, tuple[float, float]],
     asset_cfg: SceneEntityCfg,
 ):
-    """Randomize the center of mass (CoM) of rigid bodies by adding a random value sampled from the given ranges.
+    """Resample rigid-body CoM offsets relative to the asset's initial CoM.
 
     .. note::
-        This function uses CPU tensors to assign the CoM. It is recommended to use this function
-        only during the initialization of the environment.
+        The baseline is cached on the asset before this event's first application
+        and shared across calls/body selections. Repeated reset events do not
+        accumulate offsets. Configure any nominal CoM adjustment before the
+        first application. PhysX CoM tensors and the cache reside on the CPU.
     """
     # extract the used quantities (to enable type-hinting)
     asset: Articulation = env.scene[asset_cfg.name]
@@ -416,9 +418,13 @@ def randomize_rigid_body_com(
 
     # get the current com of the bodies (num_assets, num_bodies)
     coms = asset.root_physx_view.get_coms().clone()
+    if not hasattr(asset, "_nominal_com_for_randomization"):
+        asset._nominal_com_for_randomization = coms.clone()
 
-    # Randomize the com in range
-    coms[env_ids[:, None], body_ids, :3] += rand_samples
+    # Only replace selected translations; preserve other bodies/envs and rotations.
+    coms[env_ids[:, None], body_ids, :3] = (
+        asset._nominal_com_for_randomization[env_ids[:, None], body_ids, :3] + rand_samples
+    )
 
     # Set the new coms
     asset.root_physx_view.set_coms(coms, env_ids)
