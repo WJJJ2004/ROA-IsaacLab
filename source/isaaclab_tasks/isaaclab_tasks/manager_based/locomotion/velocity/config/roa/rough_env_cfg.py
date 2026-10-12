@@ -28,8 +28,8 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
 from isaaclab.utils.modifiers import ModifierBase, ModifierCfg
-from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as Gnoise
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+from isaaclab.utils.noise import NoiseModel, NoiseModelCfg
 from isaaclab_assets import ROA_CFG, ROA_BASELINE_CFG
 from isaaclab_assets.robots._roa_v4 import (
     ROA_V4_BODY_NAMES,
@@ -48,16 +48,6 @@ _HIP_ROLL_ACTION_INDICES = tuple(
     ROA_POLICY_JOINT_ORDER.index(name) for name in ("left_hip_roll", "right_hip_roll")
 )
 _POLICY_ACTION_SCALE = 0.5
-
-# Provisional per-joint observation variation from motor 2/type 06, no-load
-# recording 20261007_215320_417588. Use the largest settled-hold population
-# standard deviation per channel (baseline/final/complete_hold), with the
-# user-requested 20% margin on sigma. Units: rad and rad/s before obs scaling.
-# This does not identify moving sensor error, calibration bias, or RSU noise.
-# Evidence: analysis/no_load_feedback_analysis_20261007_215320/summary.json
-_FEEDBACK_NOISE_MARGIN = 1.2
-_MEASURED_JOINT_POS_STD = 0.00019125269548631325
-_MEASURED_JOINT_VEL_STD = 0.0658159506413723
 
 # Virtual RSU workspace selected by rsu_joint_limit_generator.py.  These are
 # absolute virtual-joint targets, not policy-space action bounds.
@@ -120,6 +110,44 @@ class SelectiveOneStepDelay(ModifierBase):
 class SelectiveOneStepDelayCfg(ModifierCfg):
     func: type = SelectiveOneStepDelay
     indices: tuple[int, ...] = _ANKLE_ACTION_INDICES
+
+
+class NoisyAngularVelocityLpf(NoiseModel):
+    """Add gyro noise, then apply a per-environment first-order low-pass filter."""
+
+    def __init__(self, noise_model_cfg, num_envs: int, device: str):
+        super().__init__(noise_model_cfg, num_envs, device)
+        if noise_model_cfg.cutoff_hz <= 0.0 or noise_model_cfg.sample_dt <= 0.0:
+            raise ValueError("Gyro LPF cutoff and sample interval must be positive.")
+        # Exact discretization of the continuous first-order pole (zero-order hold).
+        self._alpha = -math.expm1(-2.0 * math.pi * noise_model_cfg.cutoff_hz * noise_model_cfg.sample_dt)
+        self._filtered = torch.zeros((num_envs, 3), device=device)
+        self._initialized = torch.zeros(num_envs, dtype=torch.bool, device=device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._filtered[env_ids] = 0.0
+        self._initialized[env_ids] = False
+
+    def __call__(self, data: torch.Tensor) -> torch.Tensor:
+        noisy = super().__call__(data)
+        # Seed new episodes from their first noisy sample, without old-state leakage.
+        self._filtered.copy_(torch.where(
+            self._initialized[:, None],
+            self._filtered + self._alpha * (noisy - self._filtered),
+            noisy,
+        ))
+        self._initialized[:] = True
+        return self._filtered.clone()
+
+
+@configclass
+class NoisyAngularVelocityLpfCfg(NoiseModelCfg):
+    class_type: type = NoisyAngularVelocityLpf
+    noise_cfg: Unoise = Unoise(n_min=-0.3, n_max=0.3)
+    cutoff_hz: float = 5.0
+    sample_dt: float = 0.02
 
 
 @configclass
@@ -684,6 +712,7 @@ class ROAObservations:
 
     @configclass
     class PolicyCfg(ObservationGroupCfg):
+        # Legged Gym base noise defaults, except the gyro noise + LPF override below.
         # observation terms (order preserved)
         # TODO : check imu_projected_gravity return type issue
         projected_gravity = ObsTerm(
@@ -699,7 +728,7 @@ class ROAObservations:
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
             },
-            noise=Gnoise(mean=0.0, std=_MEASURED_JOINT_POS_STD * _FEEDBACK_NOISE_MARGIN),
+            noise=Unoise(n_min=-0.01, n_max=0.01),
             modifiers=[SelectiveOneStepDelayCfg()],
         )
         joint_vel = ObsTerm(
@@ -707,14 +736,15 @@ class ROAObservations:
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
             },
-            noise=Gnoise(mean=0.0, std=_MEASURED_JOINT_VEL_STD * _FEEDBACK_NOISE_MARGIN),
+            noise=Unoise(n_min=-1.5, n_max=1.5),
             modifiers=[SelectiveOneStepDelayCfg()],
         )
         # IMU observations
         imu_ang_vel = ObsTerm(
             func=mdp.imu_ang_vel,
             params={"asset_cfg": SceneEntityCfg("imu")},
-            noise=Unoise(n_min=-0.05, n_max=0.05),
+            # A modifier runs before noise: use a noise model to filter the noisy signal.
+            noise=NoisyAngularVelocityLpfCfg(),
         )
 
         actions = ObsTerm(func=mdp.last_action)
@@ -798,6 +828,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)  # meters, quaternion
             ),
         )
+        self.observations.policy.imu_ang_vel.noise.sample_dt = self.sim.dt * self.decimation
         # Sampling range in meters
         self.events.base_com = EventTerm(
             func=mdp.randomize_rigid_body_com,
