@@ -179,11 +179,7 @@ def randomize_imu_mount(
     pos_range: Dict[str, Tuple[float, float]],
     rot_range: Dict[str, Tuple[float, float]],
 ) -> Dict[str, float]:
-    """Resample a local IMU pose at reset, fixed for the following episode.
-
-    Each Euler axis is sampled independently in radians. The sensor applies
-    the resulting rotation to both gravity and angular velocity.
-    """
+    """Helper to randomise the IMU's local pose on every env reset."""
     imu_sensor = env.scene.sensors[sensor_cfg.name]
 
     # Get the envs which reset
@@ -193,8 +189,6 @@ def randomize_imu_mount(
         else torch.arange(imu_sensor.num_instances, device=env.device)
     )
     num_envs_to_update = len(env_indices)
-    if num_envs_to_update == 0:
-        return {"imu_offset_cm": 0.0, "imu_tilt_deg": 0.0}
 
     def sample_uniform(lo: float, hi: float) -> torch.Tensor:
         """Return `num_envs_to_update` samples from [lo, hi)."""
@@ -227,7 +221,7 @@ def randomize_imu_mount(
     # Not sure if this is needed
     mean_offset_cm: float = (position_offsets.norm(dim=-1).mean() * 100.0).item()
     mean_tilt_deg: float = (
-        torch.rad2deg(2.0 * torch.acos(quaternion_offsets[:, 0].abs().clamp(0.0, 1.0)))
+        torch.rad2deg(torch.acos(quaternion_offsets[:, 0].clamp(-1.0, 1.0)))
         .mean()
         .item()
     )
@@ -892,14 +886,25 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             },
         )
 
-        # PD gains randomization
+        # Preserve the October 12 gain DR for joints outside the ankles.
         self.events.randomize_actuator_gains = EventTerm(
             func=mdp.randomize_actuator_gains,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+                "asset_cfg": SceneEntityCfg("robot", joint_names="(?!.*_ankle_).*"),
                 "stiffness_distribution_params": (0.9, 1.1),  # V3 nominal proposal: (0.95, 1.05)
                 "damping_distribution_params": (0.85, 1.15),  # V3 nominal proposal: (0.9, 1.1)
+                "operation": "scale",
+                "distribution": "uniform",
+            },
+        )
+        self.events.randomize_ankle_actuator_gains = EventTerm(
+            func=mdp.randomize_actuator_gains,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=".*_ankle_(pitch|roll)"),
+                "stiffness_distribution_params": (0.3, 0.8),
+                "damping_distribution_params": (0.3, 0.8),
                 "operation": "scale",
                 "distribution": "uniform",
             },
@@ -957,11 +962,8 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                     "z": (-0.005, 0.005),
                 },
                 "rot_range": {
-                    # Conditional sole-FK residuals: roll -1.62..+0.75 deg,
-                    # pitch +2.77..+4.51 deg. Include uncertainty and both signs
-                    # without changing the nominal sensor frame or yaw range.
-                    "roll": (math.radians(-2.0), math.radians(2.0)),
-                    "pitch": (math.radians(-6.0), math.radians(6.0)),
+                    "roll": (-0.02, 0.02),
+                    "pitch": (-0.02, 0.02),
                     "yaw": (-0.02, 0.02),
                 },
             },
@@ -1048,6 +1050,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.base_com = None  # V2 bug: CoM DR remained active when randomization was disabled
         self.events.add_limb_masses = None
         self.events.randomize_actuator_gains = None
+        self.events.randomize_ankle_actuator_gains = None
         self.events.randomize_joint_properties = None
         self.events.randomize_imu_mount = None
 
