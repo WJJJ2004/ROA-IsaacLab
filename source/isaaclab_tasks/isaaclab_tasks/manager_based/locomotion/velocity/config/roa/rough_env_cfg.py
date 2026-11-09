@@ -11,8 +11,14 @@ import isaaclab.terrains as terrain_gen
 import isaaclab.utils.math as math_utils
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 from isaaclab.envs import ManagerBasedEnv
+from isaaclab.envs.utils.io_descriptors import (
+    generic_io_descriptor,
+    record_dtype,
+    record_joint_names,
+    record_joint_pos_offsets,
+    record_shape,
+)
 from isaaclab.managers import (
-    CurriculumTermCfg as CurrTerm,
     EventTermCfg as EventTerm,
     ObservationGroupCfg,
     ObservationTermCfg,
@@ -24,6 +30,8 @@ from isaaclab.managers import (
     TerminationTermCfg as DoneTerm,
 )
 from isaaclab.sensors import ImuCfg
+from isaaclab.terrains.height_field.hf_terrains import random_uniform_terrain
+from isaaclab.terrains.height_field.utils import height_field_to_mesh
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_from_euler_xyz
@@ -44,6 +52,9 @@ from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
 
 
 _ANKLE_ACTION_INDICES = (8, 9, 10, 11)
+_ANKLE_PITCH_ACTION_INDICES = tuple(
+    ROA_POLICY_JOINT_ORDER.index(name) for name in ("left_ankle_pitch", "right_ankle_pitch")
+)
 _HIP_ROLL_ACTION_INDICES = tuple(
     ROA_POLICY_JOINT_ORDER.index(name) for name in ("left_hip_roll", "right_hip_roll")
 )
@@ -53,6 +64,59 @@ _POLICY_ACTION_SCALE = 0.5
 # absolute virtual-joint targets, not policy-space action bounds.
 _ANKLE_PITCH_LIMIT = (math.radians(-36.0), math.radians(39.5))
 _ANKLE_ROLL_LIMIT = (math.radians(-18.0), math.radians(17.5))
+_RESIDUAL_ANKLE_PITCH_BIAS_LIMIT = math.radians(0.5)
+
+
+class ResidualAnklePitchBiasAction(mdp.JointPositionAction):
+    """Apply one fixed residual physical/model Pitch offset per foot and episode."""
+
+    def __init__(self, cfg: "ResidualAnklePitchBiasActionCfg", env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        self._nominal_offset = self._offset.clone()
+        self._nominal_clip = self._clip.clone()
+        self.residual_pitch_offset = torch.zeros((self.num_envs, 2), device=self.device)
+
+    def reset(self, env_ids=None):
+        super().reset(env_ids)
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        else:
+            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        limit = self.cfg.residual_pitch_bias_limit_rad
+        if limit < 0.0:
+            raise ValueError("Residual ankle Pitch bias limit must be nonnegative.")
+        self.residual_pitch_offset[env_ids] = (
+            2.0 * torch.rand((len(env_ids), 2), device=self.device) - 1.0
+        ) * limit
+        for side, joint_idx in enumerate(_ANKLE_PITCH_ACTION_INDICES):
+            self._offset[env_ids, joint_idx] = (
+                self._nominal_offset[env_ids, joint_idx] + self.residual_pitch_offset[env_ids, side]
+            )
+            # Clip in the RSU/model frame before mapping to the physical joint.
+            self._clip[env_ids, joint_idx] = (
+                self._nominal_clip[env_ids, joint_idx] + self.residual_pitch_offset[env_ids, side, None]
+            )
+
+
+@configclass
+class ResidualAnklePitchBiasActionCfg(mdp.JointPositionActionCfg):
+    class_type: type = ResidualAnklePitchBiasAction
+    residual_pitch_bias_limit_rad: float = _RESIDUAL_ANKLE_PITCH_BIAS_LIMIT
+
+
+@generic_io_descriptor(
+    observation_type="JointState",
+    on_inspect=[record_joint_names, record_dtype, record_shape, record_joint_pos_offsets],
+    units="rad",
+)
+def joint_pos_rel_with_residual_ankle_pitch_bias(
+    env: ManagerBasedEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Expose model-derived Pitch as physical Pitch minus its residual offset."""
+    joint_pos_rel = mdp.joint_pos_rel(env, asset_cfg=asset_cfg).clone()
+    residual = env.action_manager.get_term("joint_pos").residual_pitch_offset
+    joint_pos_rel[:, _ANKLE_PITCH_ACTION_INDICES] -= residual
+    return joint_pos_rel
 
 
 def selected_action_rate_l2(env: ManagerBasedEnv, action_indices: tuple[int, ...]) -> torch.Tensor:
@@ -154,7 +218,7 @@ class NoisyAngularVelocityLpfCfg(NoiseModelCfg):
 class ROAActions:
     """12-DOF virtual-joint action with hard RSU workspace clipping."""
 
-    joint_pos = mdp.JointPositionActionCfg(
+    joint_pos = ResidualAnklePitchBiasActionCfg(
         asset_name="robot",
         joint_names=ROA_POLICY_JOINT_ORDER,
         preserve_order=True,
@@ -232,6 +296,15 @@ def randomize_imu_mount(
     }
 
 
+@height_field_to_mesh
+def bounded_random_uniform_terrain(difficulty: float, cfg):
+    """Keep the interpolated height field within the configured G1 height range."""
+    heights = random_uniform_terrain.__wrapped__(difficulty, cfg)
+    lower = round(cfg.noise_range[0] / cfg.vertical_scale)
+    upper = round(cfg.noise_range[1] / cfg.vertical_scale)
+    return heights.clip(lower, upper)
+
+
 ROA_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=100.0,
@@ -241,141 +314,17 @@ ROA_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     vertical_scale=0.005,
     slope_threshold=0.75,
     use_cache=False,
+    curriculum=False,
     sub_terrains={
-    "flat": terrain_gen.MeshPlaneTerrainCfg(
-        proportion=5.0,
-    ),
-
-    # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-    #     proportion=1.5,
-    #     noise_range=(0.005, 0.035),
-    #     noise_step=0.01,
-    #     border_width=0.25,
-    # ),
-
-    # "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-    #     proportion=0.75,
-    #     slope_range=(0.0, 0.10),
-    #     platform_width=2.0,
-    #     border_width=0.25,
-    # ),
-
-    # "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-    #     proportion=0.75,
-    #     slope_range=(0.0, 0.10),
-    #     platform_width=2.0,
-    #     border_width=0.25,
-    # ),
-    # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-    #     proportion=0.5,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-    #     proportion=0.5,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-    #     proportion=0.5,
-    #     grid_width=0.45,
-    #     grid_height_range=(0.05, 0.1),
-    #     platform_width=2.0,
-    # ),        
-    #    "flat": terrain_gen.MeshPlaneTerrainCfg(
-    #        proportion=1.0,
-    #    ),
-    # "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-    #     proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
-    # ),
-    # "flat": terrain_gen.MeshPlaneTerrainCfg(
-    #     proportion=0.25,
-    # ),
-    # "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-    #     proportion=1.0,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-    #     proportion=1.0,
-    #     step_height_range=(0.05, 0.10),
-    #     step_width=0.3,
-    #     platform_width=3.0,
-    #     border_width=1.0,
-    #     holes=False,
-    # ),
-    # "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-    #     proportion=1.0,
-    #     grid_width=0.45,
-    #     grid_height_range=(0.05, 0.2),
-    #     platform_width=2.0,
-    # ),
-    #     "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-    #         proportion=1.0, noise_range=(0.02, 0.07), noise_step=0.02, border_width=0.25
-    #     ),
-    #     "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-    #         proportion=0.5,
-    #         slope_range=(0.0, 0.2),
-    #         platform_width=2.0,
-    #         border_width=0.25,
-    #     ),
-    #     "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-    #         proportion=0.5,
-    #         slope_range=(0.0, 0.2),
-    #         platform_width=2.0,
-    #         border_width=0.25,
-    #     ),
+        "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+            function=bounded_random_uniform_terrain,
+            proportion=1.0,
+            noise_range=(-0.05, 0.05),
+            noise_step=0.005,
+            downsampled_scale=0.2,
+        ),
     },
 )
-
-
-def velocity_push_curriculum(
-    env: ManagerBasedEnv,
-    env_ids: torch.Tensor | None,
-    min_push: float,
-    max_push: float,
-    curriculum_start_step: int,
-    curriculum_stop_step: int,
-):
-    """Progressively increases push velocity from min_push to max_push over specified steps.
-
-    The return dict is logged to tensorboard.
-    """
-    # Only start curriculum after the specified start step
-    if env.common_step_counter < curriculum_start_step:
-        progress = 0.0
-    else:
-        # Calculate curriculum progress (0.0 to 1.0) from start_step to stop_step
-        curriculum_duration = curriculum_stop_step - curriculum_start_step
-        progress = (
-            env.common_step_counter - curriculum_start_step
-        ) / curriculum_duration
-        progress = min(progress, 1.0)
-
-    # Start with min velocity and increase to max
-    current_velocity = min_push + (max_push - min_push) * progress
-
-    # Update the push velocity range in the event manager
-    if hasattr(env.event_manager.cfg, "push_robot"):
-        env.event_manager.cfg.push_robot.params["velocity_range"] = {
-            "x": (-current_velocity, current_velocity),
-            "y": (-current_velocity, current_velocity),
-        }
-
-    # Return logging data for tensorboard
-    return {
-        "push_velocity_progress": progress,
-        "push_velocity_magnitude": current_velocity,
-    }
 
 
 @configclass
@@ -724,7 +673,7 @@ class ROAObservations:
             func=mdp.generated_commands, params={"command_name": "base_velocity"}
         )
         joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
+            func=joint_pos_rel_with_residual_ankle_pitch_bias,
             params={
                 "asset_cfg": SceneEntityCfg("robot", joint_names=ROA_POLICY_JOINT_ORDER, preserve_order=True)
             },
@@ -767,20 +716,10 @@ class ROAObservations:
 
 @configclass
 class ROACurriculumCfg:
-    """Curriculum configuration for ROA push training."""
+    """The fixed rough-terrain and push settings do not use curricula."""
 
-    terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
-
-    # Configurable velocity push curriculum
-    velocity_push_curriculum = CurrTerm(
-        func=velocity_push_curriculum,
-        params={
-            "min_push": 0.01,
-            "max_push": 1.0,  # V3 nominal test: 0.5
-            "curriculum_start_step": 24 * 500,  # V3 nominal test: 24 * 5000
-            "curriculum_stop_step": 24 * 70000,
-        },
-    )
+    terrain_levels = None
+    velocity_push_curriculum = None
 
 @configclass
 class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
@@ -814,9 +753,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # Override terrain generator with custom ROA configuration
         self.scene.terrain.terrain_generator = ROA_ROUGH_TERRAINS_CFG
 
-        # Restore the pre-tuning terrain curriculum when DR is enabled.  The
-        # DR-off path below still disables both curriculum terms explicitly.
-        self.scene.terrain.terrain_generator.curriculum = True  # V3 nominal test: False
+        self.scene.terrain.terrain_generator.curriculum = False
 
         # Imu
         self.scene.imu = ImuCfg(
@@ -931,10 +868,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.reset_robot_joints.func = mdp.reset_joints_by_offset
 
         self.events.push_robot.mode = "interval"
-        self.events.push_robot.interval_range_s = (5.0, 15.0)
+        self.events.push_robot.interval_range_s = (5.0, 5.0)
         self.events.push_robot.params["velocity_range"] = {
-            "x": (-0.01, 0.01),
-            "y": (-0.01, 0.01),
+            "x": (-1.0, 1.0),
+            "y": (-1.0, 1.0),
         }
 
         # Base reset randomization
@@ -1053,6 +990,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.randomize_ankle_actuator_gains = None
         self.events.randomize_joint_properties = None
         self.events.randomize_imu_mount = None
+        self.actions.joint_pos.residual_pitch_bias_limit_rad = 0.0
 
         # Simple resets
         self.events.reset_robot_joints.params.update(
@@ -1115,6 +1053,7 @@ class ROARoughEnvCfg_PLAY(ROARoughEnvCfg):
         self.commands.base_velocity.ranges.heading = (3.14, 3.14)
         # disable randomization for play
         self.observations.policy.enable_corruption = False
+        self.actions.joint_pos.residual_pitch_bias_limit_rad = 0.0
         # remove random pushing for play
         self.events.base_external_force_torque = None
         self.events.push_robot = None

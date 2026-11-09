@@ -45,6 +45,7 @@ class ROAFlatEnvCfg_PLAY(ROAFlatEnvCfg):
         self.scene.env_spacing = 2.5
         # disable randomization for play
         self.observations.policy.enable_corruption = False
+        self.actions.joint_pos.residual_pitch_bias_limit_rad = 0.0
         # remove random pushing
         self.events.base_external_force_torque = None
         self.events.push_robot = None
