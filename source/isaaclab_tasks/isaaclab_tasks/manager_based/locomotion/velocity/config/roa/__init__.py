@@ -110,6 +110,9 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:ROARoughEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ROARoughPPORunnerCfg",
+        "rsl_rl_contact_finetune_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:ROAContactFinetunePPORunnerCfg"
+        ),
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_rough_ppo_cfg.yaml",
     },
 )

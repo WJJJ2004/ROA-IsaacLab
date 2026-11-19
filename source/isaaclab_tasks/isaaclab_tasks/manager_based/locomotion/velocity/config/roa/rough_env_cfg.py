@@ -318,11 +318,12 @@ ROA_ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     sub_terrains={
         "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
             function=bounded_random_uniform_terrain,
-            proportion=1.0,
-            noise_range=(-0.05, 0.05),
+            proportion=0.3,
+            noise_range=(-0.025, 0.025),
             noise_step=0.005,
             downsampled_scale=0.2,
         ),
+        "flat": terrain_gen.MeshPlaneTerrainCfg(proportion=0.7),
     },
 )
 
@@ -502,12 +503,11 @@ class ROARewards(RewardsCfg):
     #      },
     #  )
     
-    # No stomping reward
-    # Foot-impact regulariser (discourages stomping)
-    # NOTE : PLZ CHECK DISABLEMENT OF FOOT IMPACT PENALTY IN ROA PLAY ENV CFG
+    # Contact fine-tune: 2x the model_51600 penalty, with the same force threshold.
+    # Keep enabled during play and when domain randomization is disabled.
     foot_impact_penalty = RewTerm(
         func=mdp.contact_forces,
-        weight=-1.5e-3,
+        weight=-3.0e-3,
         params={
             "threshold": 446.0,  # V2: 338.0 N; scaled by 33.616 / 28.465
             "sensor_cfg": SceneEntityCfg(
@@ -735,6 +735,10 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         super().__post_init__()
 
         self.scene.num_envs = 8192  # V2 run default: 4096; prior reference run used 8192
+        # Cover every physics sample in one policy interval (200 Hz / 50 Hz).
+        # Keep this ROA-specific; other robots retain their own sensor history.
+        self.scene.contact_forces.history_length = self.decimation
+        self.scene.contact_forces.update_period = self.sim.dt
 
         if self.use_baseline_actuator is True:  # NOTE: TEST CFG
             print("[NOTE]: THIS IS BASELINE ACTUATOR CONFIGURE!\n" * 10, end="")
@@ -868,7 +872,7 @@ class ROARoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.reset_robot_joints.func = mdp.reset_joints_by_offset
 
         self.events.push_robot.mode = "interval"
-        self.events.push_robot.interval_range_s = (5.0, 5.0)
+        self.events.push_robot.interval_range_s = (5.0, 15.0)
         self.events.push_robot.params["velocity_range"] = {
             "x": (-1.0, 1.0),
             "y": (-1.0, 1.0),

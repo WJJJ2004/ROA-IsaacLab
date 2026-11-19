@@ -45,6 +45,21 @@ class ROARoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 
 @configclass
+class ROAContactFinetunePPORunnerCfg(ROARoughPPORunnerCfg):
+    """Short contact-penalty fine-tune from the stable November 9 policy.
+
+    Select with --agent rsl_rl_contact_finetune_cfg_entry_point --resume.
+    The shared CLI requires --resume even when the preset enables it.
+    """
+
+    max_iterations = 1000
+    run_name = "contact_penalty_x2"
+    resume = True
+    load_run = "2026-11-09_22-04-14"
+    load_checkpoint = r"model_51600\.pt$"
+
+
+@configclass
 class ROAFlatPPORunnerCfg(ROARoughPPORunnerCfg):
     def __post_init__(self):
         super().__post_init__()
